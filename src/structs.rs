@@ -13,6 +13,11 @@ pub trait ChordSend<T>{
     fn to_be_bytes(&self)->[u8];
 }
 
+enum NodePosition{
+    Next = 1,
+    Previous = -1
+}
+
 pub struct ChordNode<A, T, D> where A: ChordSend<T>+AsRef<[u8]>, D: Digest+Clone
 {
     pub id: Output<D>,
@@ -60,35 +65,36 @@ impl<A, T, D> ChordNode<A, T, D> where A: ChordSend<T>+AsRef<[u8]>,  D: Digest+C
     }
 
     pub async fn look_up_key(&self, key: Box<Output<D>>)->Option<Arc<A>>{
-        loop {
-            //todo: remove this loop o mmake it iterative
-            if self.id == *key {
-                return Some(self.address.clone());
-            }
-
-            let mut next_hop = None;
-
-            for finger in self.finger_table.iter().rev() { //todo binary search
-                if finger.id < *key  {
-                    next_hop = Some(finger.clone());
-                    break;
-                }
-            }
-
-            return if let Some(next) = next_hop {
-                //routing
-                if next.address.clone().send_string("Searching for: ").await.is_ok()
-                {
-                    log::debug!("Delegation key searching message sent successfully");
-                } else {
-                    log::error!("Error while trying to send delegation key searching message");
-                }
-                next.look_up_key(key).await
-            } else {
-                // Could not route further; return failure.
-                None
-            }
-        }
+        // loop {
+        //     //todo: remove this loop o make it iterative
+        //     if self.id == *key {
+        //         return Some(self.address.clone());
+        //     }
+        //
+        //     let mut next_hop = None;
+        //
+        //     for finger in self.finger_table.iter().rev() { //todo binary search
+        //         if finger.id < *key  {
+        //             next_hop = Some(finger.clone());
+        //             break;
+        //         }
+        //     }
+        //
+        //     return if let Some(next) = next_hop {
+        //         //routing
+        //         if next.address.clone().send_string("Searching for: ").await.is_ok()
+        //         {
+        //             log::debug!("Delegation key searching message sent successfully");
+        //         } else {
+        //             log::error!("Error while trying to send delegation key searching message");
+        //         }
+        //         next.look_up_key(key).await
+        //     } else {
+        //         // Could not route further; return failure.
+        //         None
+        //     }
+        // }
+        None
     }
 
     pub async fn stabilize(){
@@ -98,26 +104,26 @@ impl<A, T, D> ChordNode<A, T, D> where A: ChordSend<T>+AsRef<[u8]>,  D: Digest+C
     }
 
     pub async fn join(&mut self, mut node_to_add: Self){
-        let id= self.sha.clone().chain_update(&node_to_add.address.deref()).finalize();
-        node_to_add.id = id.clone();
-        node_to_add.sha=self.sha.clone();
-
-
-        //todo: Once found
-
-        match self.predecessor.clone().deref() {
-            None => {}
-            Some(x) => {
-                if x.id<node_to_add.id && self.id> node_to_add.id{
-                    node_to_add.predecessor = self.predecessor.clone();
-                    let predecessor_ref= Arc::new(node_to_add);
-                    self.predecessor = Arc::new(Some(predecessor_ref.clone()));
-                    self.predecessor.as_mut()
-                        .unwrap()
-                        .update_finger_table(predecessor_ref, NodePosition::Next).await;
-                }
-            }
-        }
+        // let id= self.sha.clone().chain_update(&node_to_add.address.deref()).finalize();
+        // node_to_add.id = id.clone();
+        // node_to_add.sha=self.sha.clone();
+        //
+        //
+        // //todo: Once found
+        //
+        // match self.predecessor.clone().deref() {
+        //     None => {}
+        //     Some(x) => {
+        //         if x.id<node_to_add.id && self.id> node_to_add.id{
+        //             node_to_add.predecessor = self.predecessor.clone();
+        //             let predecessor_ref= Arc::new(node_to_add);
+        //             self.predecessor = Arc::new(Some(predecessor_ref.clone()));
+        //             self.predecessor.as_mut()
+        //                 .unwrap()
+        //                 .update_finger_table(predecessor_ref, NodePosition::Next).await;
+        //         }
+        //     }
+        // }
 
 
     }
@@ -129,7 +135,5 @@ impl<A, T, D> ChordNode<A, T, D> where A: ChordSend<T>+AsRef<[u8]>,  D: Digest+C
     }
 
 }
-enum NodePosition{
-    Next = 1,
-    Previous= -1
-}
+
+
