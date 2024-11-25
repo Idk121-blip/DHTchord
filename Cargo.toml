@@ -3,6 +3,13 @@ name = "DHTchord"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "DHTchord"
+path = "src/lib.rs"
+
 [dependencies]
 digest = "0.10.7"
 log = "0.4.22"
+oneshot = "0.1.8"
+message-io = "0.18.2"
+serde = { version = "1.0.215", features = ["derive"] }
