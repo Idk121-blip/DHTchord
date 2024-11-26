@@ -13,6 +13,10 @@ pub enum Message{//<T>
 
     // SendMessage(Box<Message<T>>, SocketAddr),
 
+    AddSuccessor(SocketAddr),
+
+    AddPredecessor(SocketAddr),
+
     Join(SocketAddr),
 
     Message(String),
