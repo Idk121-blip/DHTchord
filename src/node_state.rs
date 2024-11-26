@@ -1,25 +1,27 @@
 use crate::common::Message;
-use digest::Digest;
 use message_io::network::{NetEvent, Transport};
 use message_io::node::{self, NodeHandler, NodeListener};
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
-use sha2::{Sha256};
+use sha2::{Sha256, Digest};
 
-pub struct NodeState <D> where D: Digest{
+pub struct NodeState {
     node_handler: NodeHandler<()>,
     node_listener: Option<NodeListener<()>>,
     //Check if endpoint is needed
     //endpoint: Endpoint,
+    id: Vec<u8>,
     self_addr: SocketAddr, // The node's own address
     known_peers: HashSet<SocketAddr>, // Known peers in the network
+    finger_table: Vec<SocketAddr>,
+    predecessor: Option<SocketAddr>,
     gossip_interval: Duration,   // Time between gossip rounds
-    sha: D
+    sha: Sha256,
 }
 
 
-impl<D> NodeState <D> where D: Digest {
+impl NodeState {
     pub fn new(ip_addr: IpAddr, port: u16)->Self{
         let (handler, node_listener) = node::split();
 
@@ -35,23 +37,27 @@ impl<D> NodeState <D> where D: Digest {
         // let discovery_addr = "127.0.0.1:2000"; // Connection to the discovery server.
         // let Ok((endpoint, _)) = handler.network().connect(Transport::FramedTcp, discovery_addr)
         // else { panic!("Pippa2") };
-        
+
         Self{
             node_handler: handler,
+            id: vec![],
             node_listener: Some(node_listener),
             self_addr: SocketAddr::new(ip_addr, port),
+
             //endpoint,
             known_peers: Default::default(),
+            finger_table: vec![],
+            predecessor: None,
             gossip_interval: Default::default(),
             sha: Sha256::new(),
         }
     }
 
-
-    pub fn set_sha(mut self, sha: D)->Self{
-        self.sha = sha;
-        self
-    }
+    //
+    // pub fn set_sha(mut self)->Self{
+    //     self.sha = sha;
+    //     self
+    // }
 
     pub fn run(mut self){
         println!("{}", self.self_addr.port());
@@ -87,8 +93,58 @@ impl<D> NodeState <D> where D: Digest {
                         //sleep(Duration::from_secs(3));
                         self.node_handler.network().send(endpoint, &output_data);
                     }
-                    Message::Join(self_address)=>{
-                        self.sha.clone().chain_update(self_address).finalize()
+                    Message::Join(socket_addr)=>{
+                        let mut hasher = Sha256::new();
+                        hasher.update(socket_addr.to_string().as_bytes());
+                        let node_id = hasher.clone().finalize().to_vec();
+
+                        // If the current node's finger table is empty, it's the only node in the network.
+                        if self.finger_table.is_empty() {
+                            // Join directly as both successor and predecessor.
+                            self.predecessor = Some(socket_addr);
+                            self.finger_table.push(socket_addr);
+                            return;
+                        }
+
+                        // Compute this node's hashed ID, predecessor, and successor.
+                        hasher.update(self.finger_table[0].to_string().as_bytes());
+                        let successor = hasher.clone().finalize().to_vec();
+
+                        // let mut hasher = Sha256::new();
+                        hasher.update(self.predecessor.unwrap().to_string().as_bytes());//todo check the unwrap
+                        let predecessor = hasher.clone().finalize().to_vec();
+
+                        if node_id > self.id && node_id <= successor {
+                            // The new node should join as this node's successor.
+                            //self.notify_successor(socket_addr);
+                            return;
+                        }
+
+                        if node_id < self.id && node_id >= predecessor {
+                            // The new node should join as this node's predecessor.
+                            //self.notify_predecessor(socket_addr);
+                            return;
+                        }
+
+                        // Perform binary search in the finger table to find the closest node.
+                        let mut s = 0;
+                        let mut e = self.finger_table.len();
+                        while s < e {
+                            let mid = (s + e) / 2;
+
+                            hasher.update(self.finger_table[mid].to_string().as_bytes());
+                            let mid_id = hasher.clone().finalize().to_vec();
+
+                            if mid_id > node_id {
+                                e = mid;
+                            } else {
+                                s = mid + 1;
+                            }
+                        }
+
+                        //Find the closest to that position
+
+                        
                     }
                     Message::Message(mex) => {
                         println!("Message received from other peer");
@@ -104,6 +160,8 @@ impl<D> NodeState <D> where D: Digest {
             NetEvent::Disconnected(_) => {}
         });
     }
+
+
 
 
 
