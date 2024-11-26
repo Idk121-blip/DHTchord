@@ -1,16 +1,24 @@
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use message_io::network::Endpoint;
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
-pub enum Message{
+pub enum Message{//<T>
     RegisterServer(String, SocketAddr),
 
     ScanningFor(SocketAddr, SocketAddr),
 
     ServerAdded(String, SocketAddr),
 
-    SendMessage(String, SocketAddr),
+    SendStringMessage(String, SocketAddr),
 
-    Message(String)
+    // SendMessage(Box<Message<T>>, SocketAddr),
+
+    Join(SocketAddr),
+
+    Message(String),
+
+    Accepted,
+
+    Rejected,
+
 }
