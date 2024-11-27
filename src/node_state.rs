@@ -1,9 +1,7 @@
 use crate::common::Message::{self};
-use digest::consts::U32;
-use digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeHandler, NodeListener};
-use sha2::{Digest, OidSha256, Sha256, Sha256VarCore};
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -26,27 +24,18 @@ impl NodeState {
     pub fn new(ip_addr: IpAddr, port: u16) -> Self {
         let (handler, node_listener) = node::split();
 
-        // A node_listener for any other participant that want to establish connection.
-        // Returned 'listen_addr' contains the port that the OS gives for us when we put a 0.
         let listen_addr = &(ip_addr.to_string() + ":" + &port.to_string());
-        //let Ok((_, listen_addr)) =
         handler.network().listen(Transport::FramedTcp, listen_addr).unwrap();
-        // else { panic!("Pippa"); };
 
         println!("Discovery server running at {}", listen_addr);
 
-        // let discovery_addr = "127.0.0.1:2000"; // Connection to the discovery server.
-        // let Ok((endpoint, _)) = handler.network().connect(Transport::FramedTcp, discovery_addr)
-        // else { panic!("Pippa2") };
-        let id = sha2::Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
+        let id = Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
         println!("{:?}", id);
         Self {
             node_handler: handler,
             id,
             node_listener: Some(node_listener),
             self_addr: SocketAddr::new(ip_addr, port),
-
-            //endpoint,
             known_peers: Default::default(),
             finger_table: vec![],
             predecessor: None,
@@ -59,17 +48,14 @@ impl NodeState {
         println!("{}", self.self_addr.port());
         if self.self_addr.port() == 8888 {
             let mex2 = Message::Join(self.self_addr.clone());
-            println!("works fine -1");
 
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
-                    println!("works fine -12");
                     let (endpoint, _) = self
                         .node_handler
                         .network()
                         .connect(Transport::FramedTcp, "127.0.0.1:8911")
                         .unwrap();
-                    println!("works fine -123");
 
                     while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         println!("Waiting for response...");
@@ -164,24 +150,18 @@ impl NodeState {
 
     fn join_handler(&mut self, endpoint: Endpoint, socket_addr: SocketAddr) {
         println!("entering join process");
-        let mut hasher = Sha256::new();
-        hasher.update(socket_addr.to_string().as_bytes());
-        let node_id = hasher.clone().finalize().to_vec();
 
-        // If the current node's finger table is empty, it's the only node in the network.
+        let node_id = Sha256::digest(socket_addr.to_string().as_bytes()).to_vec();
+
         if self.has_empty_table(&endpoint, &socket_addr) {
             println!("Node added to empty table");
             return;
         }
 
-        // Compute this node's hashed ID, predecessor, and successor.
-        hasher.update(self.finger_table[0].to_string().as_bytes());
-        let successor = hasher.clone().finalize().to_vec();
+        let successor = Sha256::digest(self.finger_table[0].to_string().as_bytes()).to_vec();
 
-        // let mut hasher = Sha256::new();
-        hasher.update(self.predecessor.unwrap().to_string().as_bytes()); //todo check the unwrap
-        let predecessor = hasher.clone().finalize().to_vec();
-        println!("something is working");
+        let predecessor = Sha256::digest(self.predecessor.unwrap().to_string().as_bytes()).to_vec(); //todo check the unwrap
+
         println!("{}", node_id < self.id && node_id >= predecessor);
         if node_id < self.id && node_id >= predecessor {
             //todo ''
@@ -197,8 +177,6 @@ impl NodeState {
             //todo save in cache the successor 4 secur
             self.predecessor = Some(socket_addr);
             println!("{:?}", self.finger_table);
-            println!("{:?} {:?}", node_id, successor);
-            println!("{:?}", predecessor);
 
             return;
         }
@@ -206,15 +184,13 @@ impl NodeState {
         if self.insert_between_self_and_successor(&endpoint, &socket_addr, &node_id, successor) {
             return;
         }
-        println!("something is not working");
-        // Perform binary search in the finger table to find the closest node.
-        self.binary_search(hasher.clone(), &node_id);
+
+        self.binary_search(&node_id);
     }
 
     fn has_empty_table(&mut self, endpoint: &Endpoint, socket_addr: &SocketAddr) -> bool {
         if self.finger_table.is_empty() {
             println!("{}: request from ip: {endpoint} joining: {socket_addr}", self.self_addr);
-            // Join directly as both successor and predecessor.
             self.predecessor = Some(*socket_addr);
             self.finger_table.push(*socket_addr);
 
@@ -223,7 +199,7 @@ impl NodeState {
             let message = bincode::serialize(&Message::AddPredecessor(self.self_addr)).unwrap();
             self.node_handler.network().send(*endpoint, &message);
             println!("{:?}", self.finger_table);
-            println!("join process successfully");
+            println!("join successfully");
             return true;
         }
         false
@@ -236,7 +212,6 @@ impl NodeState {
         node_id: &Vec<u8>,
         successor: Vec<u8>,
     ) -> bool {
-        // The new node should join as this node's successor.
         if *node_id > self.id && *node_id <= successor {
             println!("{}: Inserting between self and successor", self.self_addr);
             let successor_message = Message::AddPredecessor(self.self_addr);
@@ -248,23 +223,18 @@ impl NodeState {
             //todo save in cache the successor 4 secur
             self.finger_table.insert(0, *socket_addr);
             println!("{:?}", self.finger_table);
-            println!("{:?} {:?}", node_id, successor);
+            println!("join successfully");
             return true;
         }
         false
     }
 
-    fn binary_search(
-        &self,
-        mut hasher: CoreWrapper<CtVariableCoreWrapper<Sha256VarCore, U32, OidSha256>>,
-        node_id: &Vec<u8>,
-    ) {
+    fn binary_search(&self, node_id: &Vec<u8>) {
         let mut s = 0;
         let mut e = self.finger_table.len();
         while s < e {
             let mid = (s + e) / 2;
-            hasher.update(self.finger_table[mid].to_string().as_bytes());
-            let mid_id = hasher.clone().finalize().to_vec();
+            let mid_id = Sha256::digest(self.finger_table[mid].to_string().as_bytes()).to_vec();
 
             if mid_id > *node_id {
                 e = mid;
@@ -272,5 +242,8 @@ impl NodeState {
                 s = mid + 1;
             }
         }
+
+        //todo Check if it's closer this one or the one that is predecessor
+        // NB: it won't be unless mid = e at the end (CREDO)
     }
 }
