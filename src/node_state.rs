@@ -144,6 +144,12 @@ impl NodeState {
                 //println!("Add succesossr {endpoint}, {mex} {}", self.self_addr);
                 //todo
             }
+            Message::AddPredecessor(mex) => {
+                //println!("Add succesossr {endpoint}, {mex} {}", self.self_addr);
+                //todo
+            }
+            Message::ForwardedJoin(_) => {}
+
             _ => {}
         }
     }
@@ -162,26 +168,7 @@ impl NodeState {
 
         let predecessor = Sha256::digest(self.predecessor.unwrap().to_string().as_bytes()).to_vec(); //todo check the unwrap
 
-        println!("{}", node_id < self.id && node_id >= predecessor);
-        if node_id < self.id && node_id >= predecessor {
-            //todo ''
-            // The new node should join as this node's predecessor.
-            //self.notify_predecessor(socket_addr);
-            println!("{}: Inserting between predecessor and self", self.self_addr);
-            let successor_message = Message::AddSuccessor(self.self_addr);
-            let output_data = bincode::serialize(&successor_message).unwrap();
-            self.node_handler.network().send(endpoint, &output_data);
-            let successor_message = Message::AddPredecessor(self.predecessor.unwrap());
-            let output_data = bincode::serialize(&successor_message).unwrap();
-            self.node_handler.network().send(endpoint, &output_data);
-            //todo save in cache the successor 4 secur
-            self.predecessor = Some(socket_addr);
-            println!("{:?}", self.finger_table);
-
-            return;
-        }
-
-        if self.insert_between_self_and_successor(&endpoint, &socket_addr, &node_id, successor) {
+        if self.insert_near_self(&endpoint, &socket_addr, &node_id, successor, predecessor) {
             return;
         }
 
@@ -205,25 +192,63 @@ impl NodeState {
         false
     }
 
-    fn insert_between_self_and_successor(
+    fn insert_near_self(
         &mut self,
         endpoint: &Endpoint,
         socket_addr: &SocketAddr,
         node_id: &Vec<u8>,
+        predecessor: Vec<u8>,
         successor: Vec<u8>,
     ) -> bool {
-        if *node_id > self.id && *node_id <= successor {
-            println!("{}: Inserting between self and successor", self.self_addr);
-            let successor_message = Message::AddPredecessor(self.self_addr);
-            let output_data = bincode::serialize(&successor_message).unwrap();
+        self.insert_between(endpoint, socket_addr, node_id, predecessor, true)
+            || self.insert_between(endpoint, socket_addr, node_id, successor, false)
+    }
+
+    fn insert_between(
+        &mut self,
+        endpoint: &Endpoint,
+        socket_addr: &SocketAddr,
+        node_id: &Vec<u8>,
+        node_near_self: Vec<u8>,
+        is_predecessor: bool,
+    ) -> bool {
+        //todo save in cache the successor 4 security reason
+
+        if (is_predecessor && *node_id < self.id && *node_id >= node_near_self)
+            || (!is_predecessor && *node_id > self.id && *node_id <= node_near_self)
+        {
+            let role = if is_predecessor {
+                "predecessor and self"
+            } else {
+                "self and successor"
+            };
+            println!("{}: Inserting between {}", self.self_addr, role);
+
+            let first_message = if is_predecessor {
+                Message::AddSuccessor(self.self_addr)
+            } else {
+                Message::AddPredecessor(self.self_addr)
+            };
+            let output_data = bincode::serialize(&first_message).unwrap();
             self.node_handler.network().send(*endpoint, &output_data);
-            let successor_message = Message::AddSuccessor(self.finger_table[0]);
-            let output_data = bincode::serialize(&successor_message).unwrap();
+
+            let second_message = if is_predecessor {
+                Message::AddPredecessor(self.predecessor.unwrap())
+            } else {
+                Message::AddSuccessor(self.finger_table[0])
+            };
+            let output_data = bincode::serialize(&second_message).unwrap();
             self.node_handler.network().send(*endpoint, &output_data);
-            //todo save in cache the successor 4 secur
-            self.finger_table.insert(0, *socket_addr);
+
+            if is_predecessor {
+                self.predecessor = Some(*socket_addr);
+            } else {
+                self.finger_table.insert(0, *socket_addr);
+            }
+
             println!("{:?}", self.finger_table);
             println!("join successfully");
+
             return true;
         }
         false

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize)]
-pub enum Message{//<T>
+pub enum Message {
+    //<T>
     RegisterServer(String, SocketAddr),
 
     ScanningFor(SocketAddr, SocketAddr),
@@ -10,8 +11,6 @@ pub enum Message{//<T>
     ServerAdded(String, SocketAddr),
 
     SendStringMessage(String, SocketAddr),
-
-    // SendMessage(Box<Message<T>>, SocketAddr),
 
     AddSuccessor(SocketAddr),
 
@@ -25,4 +24,6 @@ pub enum Message{//<T>
 
     Rejected,
 
+    ForwardedJoin(SocketAddr),
+    // SendMessage(Box<Message<T>>, SocketAddr),
 }
