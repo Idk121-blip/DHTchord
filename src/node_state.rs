@@ -1,12 +1,11 @@
 use crate::common::Message::{self};
 use digest::consts::U32;
 use digest::core_api::{CoreWrapper, CtVariableCoreWrapper};
-use message_io::network::{Endpoint, NetEvent, Transport};
+use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeHandler, NodeListener};
 use sha2::{Digest, OidSha256, Sha256, Sha256VarCore};
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
-use std::thread::sleep;
 use std::time::Duration;
 
 pub struct NodeState {
@@ -39,10 +38,11 @@ impl NodeState {
         // let discovery_addr = "127.0.0.1:2000"; // Connection to the discovery server.
         // let Ok((endpoint, _)) = handler.network().connect(Transport::FramedTcp, discovery_addr)
         // else { panic!("Pippa2") };
-
+        let id = sha2::Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
+        println!("{:?}", id);
         Self {
             node_handler: handler,
-            id: vec![],
+            id,
             node_listener: Some(node_listener),
             self_addr: SocketAddr::new(ip_addr, port),
 
@@ -55,27 +55,47 @@ impl NodeState {
         }
     }
 
-    //
-    // pub fn set_sha(mut self)->Self{
-    //     self.sha = sha;
-    //     self
-    // }
-
     pub fn run(mut self) {
         println!("{}", self.self_addr.port());
-        if self.self_addr.port() == 8910 {
-            sleep(Duration::from_secs(2));
-            let (endpoint, _) = self
-                .node_handler
-                .network()
-                .connect(Transport::FramedTcp, "127.0.0.1:8888")
-                .unwrap();
-
+        if self.self_addr.port() == 8888 {
             let mex2 = Message::Join(self.self_addr.clone());
+            println!("works fine -1");
 
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
-                    self.node_handler.network().send(endpoint, &output_data);
+                    println!("works fine -12");
+                    let (endpoint, _) = self
+                        .node_handler
+                        .network()
+                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                        .unwrap();
+                    println!("works fine -123");
+
+                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        println!("Waiting for response...");
+                    } //todo work on this for a better mechanism
+                }
+                Err(x) => {
+                    println!("{:?}", x);
+                }
+            }
+        }
+
+        if self.self_addr.port() == 8910 {
+            println!("works fine");
+            let mex2 = Message::Join(self.self_addr.clone());
+            println!("Digddffd {}", self.self_addr.port());
+            match bincode::serialize(&mex2) {
+                Ok(output_data) => {
+                    let (endpoint, _) = self
+                        .node_handler
+                        .network()
+                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                        .unwrap();
+
+                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        println!("Waiting for response...");
+                    } //todo work on this for a better mechanism
                 }
                 Err(x) => {
                     println!("{:?}", x);
@@ -88,7 +108,7 @@ impl NodeState {
                 self.binary_handler(endpoint, input_data);
             }
             NetEvent::Connected(endpoint, result) => {
-                println!("{}: request from ip: {endpoint} connected: {result}", self.self_addr)
+                //println!("{}: request from ip: {endpoint} connected: {result}", self.self_addr)
             }
             NetEvent::Accepted(_, _) => {}
             NetEvent::Disconnected(_) => {}
@@ -134,6 +154,10 @@ impl NodeState {
                 println!("My ip {:?}", self.self_addr);
                 println!("{mex}")
             }
+            Message::AddSuccessor(mex) => {
+                //println!("Add succesossr {endpoint}, {mex} {}", self.self_addr);
+                //todo
+            }
             _ => {}
         }
     }
@@ -145,16 +169,8 @@ impl NodeState {
         let node_id = hasher.clone().finalize().to_vec();
 
         // If the current node's finger table is empty, it's the only node in the network.
-        if self.finger_table.is_empty() {
-            println!("{}: request from ip: {endpoint} joining: {socket_addr}", self.self_addr);
-            // Join directly as both successor and predecessor.
-            self.predecessor = Some(socket_addr);
-            self.finger_table.push(socket_addr);
-
-            let message = bincode::serialize(&Message::AddSuccessor(self.self_addr)).unwrap();
-            self.node_handler.network().send(endpoint, &message);
-            let message = bincode::serialize(&Message::AddPredecessor(self.self_addr)).unwrap();
-            self.node_handler.network().send(endpoint, &message);
+        if self.has_empty_table(&endpoint, &socket_addr) {
+            println!("Node added to empty table");
             return;
         }
 
@@ -165,24 +181,77 @@ impl NodeState {
         // let mut hasher = Sha256::new();
         hasher.update(self.predecessor.unwrap().to_string().as_bytes()); //todo check the unwrap
         let predecessor = hasher.clone().finalize().to_vec();
-
-        if node_id > self.id && node_id <= successor {
-
-            // The new node should join as this node's successor.
-            let successor_message = Message::AddSuccessor(self.finger_table[0]);
-            let output_data = bincode::serialize(&successor_message).unwrap();
-            self.node_handler.network().send(endpoint, &output_data);
-            return;
-        }
-
+        println!("something is working");
+        println!("{}", node_id < self.id && node_id >= predecessor);
         if node_id < self.id && node_id >= predecessor {
+            //todo ''
             // The new node should join as this node's predecessor.
             //self.notify_predecessor(socket_addr);
+            println!("{}: Inserting between predecessor and self", self.self_addr);
+            let successor_message = Message::AddSuccessor(self.self_addr);
+            let output_data = bincode::serialize(&successor_message).unwrap();
+            self.node_handler.network().send(endpoint, &output_data);
+            let successor_message = Message::AddPredecessor(self.predecessor.unwrap());
+            let output_data = bincode::serialize(&successor_message).unwrap();
+            self.node_handler.network().send(endpoint, &output_data);
+            //todo save in cache the successor 4 secur
+            self.predecessor = Some(socket_addr);
+            println!("{:?}", self.finger_table);
+            println!("{:?} {:?}", node_id, successor);
+            println!("{:?}", predecessor);
+
             return;
         }
 
+        if self.insert_between_self_and_successor(&endpoint, &socket_addr, &node_id, successor) {
+            return;
+        }
+        println!("something is not working");
         // Perform binary search in the finger table to find the closest node.
         self.binary_search(hasher.clone(), &node_id);
+    }
+
+    fn has_empty_table(&mut self, endpoint: &Endpoint, socket_addr: &SocketAddr) -> bool {
+        if self.finger_table.is_empty() {
+            println!("{}: request from ip: {endpoint} joining: {socket_addr}", self.self_addr);
+            // Join directly as both successor and predecessor.
+            self.predecessor = Some(*socket_addr);
+            self.finger_table.push(*socket_addr);
+
+            let message = bincode::serialize(&Message::AddSuccessor(self.self_addr)).unwrap();
+            self.node_handler.network().send(*endpoint, &message);
+            let message = bincode::serialize(&Message::AddPredecessor(self.self_addr)).unwrap();
+            self.node_handler.network().send(*endpoint, &message);
+            println!("{:?}", self.finger_table);
+            println!("join process successfully");
+            return true;
+        }
+        false
+    }
+
+    fn insert_between_self_and_successor(
+        &mut self,
+        endpoint: &Endpoint,
+        socket_addr: &SocketAddr,
+        node_id: &Vec<u8>,
+        successor: Vec<u8>,
+    ) -> bool {
+        // The new node should join as this node's successor.
+        if *node_id > self.id && *node_id <= successor {
+            println!("{}: Inserting between self and successor", self.self_addr);
+            let successor_message = Message::AddPredecessor(self.self_addr);
+            let output_data = bincode::serialize(&successor_message).unwrap();
+            self.node_handler.network().send(*endpoint, &output_data);
+            let successor_message = Message::AddSuccessor(self.finger_table[0]);
+            let output_data = bincode::serialize(&successor_message).unwrap();
+            self.node_handler.network().send(*endpoint, &output_data);
+            //todo save in cache the successor 4 secur
+            self.finger_table.insert(0, *socket_addr);
+            println!("{:?}", self.finger_table);
+            println!("{:?} {:?}", node_id, successor);
+            return true;
+        }
+        false
     }
 
     fn binary_search(
