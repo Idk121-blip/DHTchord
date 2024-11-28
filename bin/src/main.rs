@@ -10,8 +10,6 @@ pub fn main() {
         z.run();
     });
 
-    println!("Hello, world!");
-
     sleep(Duration::from_secs(5));
     let y = NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "8910".parse().unwrap());
     thread::spawn(move || {
