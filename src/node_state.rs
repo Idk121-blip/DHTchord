@@ -27,10 +27,50 @@ impl NodeState {
 
         let listen_addr = &(ip_addr.to_string() + ":" + &port.to_string());
         handler.network().listen(Transport::FramedTcp, listen_addr).unwrap();
+        handler.network().listen(Transport::Udp, listen_addr).unwrap();
 
         println!("Discovery server running at {}", listen_addr);
 
         let id = Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
+        if port == 8888 {
+            let mex2 = Message::Join(SocketAddr::new(ip_addr, port));
+
+            match bincode::serialize(&mex2) {
+                Ok(output_data) => {
+                    let (endpoint, _) = handler
+                        .network()
+                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                        .unwrap();
+
+                    while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        println!("Waiting for response...");
+                    } //todo work on this for a better mechanism
+                }
+                Err(x) => {
+                    println!("{:?}", x);
+                }
+            }
+        }
+
+        if port == 8910 {
+            let mex2 = Message::Join(SocketAddr::new(ip_addr, port));
+            match bincode::serialize(&mex2) {
+                Ok(output_data) => {
+                    let (endpoint, x) = handler
+                        .network()
+                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                        .unwrap();
+                    println!("{x}");
+                    while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        println!("Waiting for response...");
+                    } //todo work on this for a better mechanism
+                }
+                Err(x) => {
+                    println!("{:?}", x);
+                }
+            }
+        }
+
         Self {
             node_handler: handler,
             id,
@@ -45,56 +85,24 @@ impl NodeState {
     }
 
     pub fn run(mut self) {
-        if self.self_addr.port() == 8888 {
-            let mex2 = Message::Join(self.self_addr.clone());
-
-            match bincode::serialize(&mex2) {
-                Ok(output_data) => {
-                    let (endpoint, _) = self
-                        .node_handler
-                        .network()
-                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
-                        .unwrap();
-
-                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                        println!("Waiting for response...");
-                    } //todo work on this for a better mechanism
-                }
-                Err(x) => {
-                    println!("{:?}", x);
-                }
-            }
-        }
-
-        if self.self_addr.port() == 8910 {
-            let mex2 = Message::Join(self.self_addr.clone());
-            match bincode::serialize(&mex2) {
-                Ok(output_data) => {
-                    let (endpoint, _) = self
-                        .node_handler
-                        .network()
-                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
-                        .unwrap();
-
-                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                        println!("Waiting for response...");
-                    } //todo work on this for a better mechanism
-                }
-                Err(x) => {
-                    println!("{:?}", x);
-                }
-            }
-        }
         let node_listener = self.node_listener.take().unwrap();
         node_listener.for_each(move |event| match event.network() {
             NetEvent::Message(endpoint, input_data) => {
+                println!("Received message from [{}]: {:?}", endpoint, input_data);
                 self.binary_handler(endpoint, input_data);
             }
             NetEvent::Connected(_endpoint, _result) => {
-                println!("{}: request from ip: {_endpoint} connected: {_result}", self.self_addr)
+                println!("{}: request from ip: {_endpoint} connected: {_result}", self.self_addr);
             }
-            NetEvent::Accepted(_, _) => {}
-            NetEvent::Disconnected(_) => {}
+            NetEvent::Accepted(_, _) => {
+                return;
+            }
+            NetEvent::Disconnected(_) => {
+                return;
+            }
+            _ => {
+                println!("{}: received unknown message", self.self_addr);
+            }
         });
     }
 
@@ -126,19 +134,19 @@ impl NodeState {
                 //let (endpoint, _ )= self.node_handler.network().connect(Transport::FramedTcp, &*ip).unwrap();
                 println!("{endpoint}");
                 //sleep(Duration::from_secs(3));
-                self.node_handler.network().send(endpoint, &output_data);
+                // self.node_handler.network().send(endpoint, &output_data);
             }
             Message::Join(socket_addr) => {
-                println!(
-                    "{}: request from endpoint: {endpoint} ip: {socket_addr}",
-                    self.self_addr
-                );
-                self.join_handler(endpoint, socket_addr);
+                println!("{}: request from endpoint ip: {socket_addr}", self.self_addr);
+                println!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+                self.join_handler(&endpoint, socket_addr);
+
                 //Find the closest to that position
             }
             Message::Message(mex) => {
                 println!("Message received from other peer");
-                println!("My ip {:?}", self.self_addr);
+                println!("My ip {:?} ep: {:?}", self.self_addr, endpoint);
                 println!("{mex}")
             }
             Message::AddSuccessor(_mex) => {
@@ -148,22 +156,36 @@ impl NodeState {
             Message::AddPredecessor(_mex) => {
                 //println!("Add succesossr {endpoint}, {mex} {}", self.self_addr);
                 //todo
+                println!("Message Add predecessor from other peer {}", self.self_addr);
+                self.node_handler.stop();
             }
             Message::ForwardedJoin(socket_addr) => {
                 println!("Oh shit. here we go again");
-                let ((endpoint, _)) = self
+                let ((new_endpoint, _)) = self
                     .node_handler
                     .network()
                     .connect(Transport::FramedTcp, socket_addr)
                     .unwrap();
-                self.join_handler(endpoint, socket_addr);
+
+                let mex2 = Message::Join(self.self_addr.clone());
+                let output_data = bincode::serialize(&mex2).unwrap();
+
+                println!("{new_endpoint}");
+
+                while self.node_handler.network().send(new_endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                    println!("{:?}", self.node_handler.network().is_ready(new_endpoint.resource_id()));
+                    println!("Waiting for response...");
+                    sleep(Duration::from_millis(3000));
+                }
             }
 
-            _ => {}
+            _ => {
+                println!("Received unexpected message 2");
+            }
         }
     }
 
-    fn join_handler(&mut self, endpoint: Endpoint, socket_addr: SocketAddr) {
+    fn join_handler(&mut self, endpoint: &Endpoint, socket_addr: SocketAddr) {
         println!("entering join process");
 
         let node_id = Sha256::digest(socket_addr.to_string().as_bytes()).to_vec();
@@ -181,9 +203,7 @@ impl NodeState {
             return;
         }
 
-        println!("Good so far");
-
-        self.binary_search(&node_id, socket_addr);
+        self.binary_search(&node_id, socket_addr, &endpoint);
     }
 
     fn has_empty_table(&mut self, endpoint: &Endpoint, socket_addr: &SocketAddr) -> bool {
@@ -265,7 +285,7 @@ impl NodeState {
         false
     }
 
-    fn binary_search(&self, node_id: &Vec<u8>, socket_addr: SocketAddr) {
+    fn binary_search(&self, node_id: &Vec<u8>, socket_addr: SocketAddr, endpoint: &Endpoint) {
         let mut s = 0;
         let mut e = self.finger_table.len();
         while s < e {
@@ -279,24 +299,18 @@ impl NodeState {
             }
         }
 
-        println!("{}, {s}: search successfully", e);
-        println!("{}", self.finger_table[e]);
+        println!("{}, {s}: search successfully", s);
+        println!("------------------------------------------");
 
-        let ((endpoint2, _)) = self
-            .node_handler
-            .network()
-            .connect(Transport::FramedTcp, self.finger_table[e])
-            .unwrap();
+        println!("{socket_addr}, {}", self.self_addr);
+        println!("{}", self.finger_table[s]);
 
-        println!("{}, {}", self.finger_table[e], endpoint2);
+        println!("------------------------------------------");
 
-        let message = Message::ForwardedJoin(socket_addr);
-        let output_data = bincode::serialize(&message).unwrap();
+        let mex = Message::ForwardedJoin(self.finger_table[s].clone());
+        let output_data = bincode::serialize(&mex).unwrap();
 
-        while self.node_handler.network().send(endpoint2, &output_data) == SendStatus::ResourceNotAvailable {
-            println!("Waiting for response...");
-            sleep(Duration::from_millis(1000));
-        }
+        self.node_handler.network().send(*endpoint, &output_data);
 
         //todo Check if it's closer this one or the one that is predecessor
         // NB: it won't be unless mid = e at the end (CREDO)
