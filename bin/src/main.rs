@@ -10,7 +10,7 @@ pub fn main() {
         z.run();
     });
 
-    sleep(Duration::from_secs(5));
+    sleep(Duration::from_secs(2));
     let y = NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "8910".parse().unwrap());
     thread::spawn(move || {
         y.run();
