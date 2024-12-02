@@ -93,7 +93,13 @@ impl NodeState {
         let node_listener = self.node_listener.take().unwrap();
         node_listener.for_each(move |event| match event.network() {
             NetEvent::Message(endpoint, input_data) => {
-                self.handle_binary(endpoint, input_data);
+                //
+                match bincode::deserialize(input_data) {
+                    Ok(message) => {
+                        self.handle_message(endpoint, message);
+                    }
+                    Err(x) => println!("{:?}", x),
+                }
             }
             NetEvent::Connected(endpoint, _result) => {
                 println!("{}: request from ip: {endpoint} connected: {_result}", self.self_addr);
@@ -106,15 +112,6 @@ impl NodeState {
                 self.node_handler.network().remove(x.resource_id());
             }
         });
-    }
-
-    fn handle_binary(&mut self, endpoint: Endpoint, input_data: &[u8]) {
-        match bincode::deserialize(input_data) {
-            Ok(message) => {
-                self.handle_message(endpoint, message);
-            }
-            Err(x) => println!("{:?}", x),
-        }
     }
 
     fn handle_message(&mut self, endpoint: Endpoint, message: Message) {
