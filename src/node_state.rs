@@ -11,11 +11,14 @@ pub struct NodeState {
     node_handler: NodeHandler<()>,
     node_listener: Option<NodeListener<()>>,
     id: Vec<u8>,
-    self_addr: SocketAddr,            // The node's own address
-    known_peers: HashSet<SocketAddr>, // Known peers in the network
+    /// The node's own address.
+    self_addr: SocketAddr,
+    /// Known peers in the network.
+    known_peers: HashSet<SocketAddr>,
     finger_table: Vec<SocketAddr>,
     predecessor: Option<SocketAddr>,
-    gossip_interval: Duration, // Time between gossip rounds
+    /// Time interval between gossip rounds.
+    gossip_interval: Duration,
     sha: Sha256,
 }
 
@@ -149,12 +152,9 @@ impl NodeState {
 
                 println!("{}, {:?}", self.self_addr, self.finger_table);
             }
-            Message::AddPredecessor(address) => {
-                self.predecessor = Some(address)
-            }
+            Message::AddPredecessor(address) => self.predecessor = Some(address),
             Message::ForwardedJoin(socket_addr) => {
                 println!("Oh shit. here we go again");
-
 
                 let join_message = Message::Join(self.self_addr);
                 let output_data = bincode::serialize(&join_message).unwrap();
@@ -165,10 +165,10 @@ impl NodeState {
                 let (new_endpoint, _) = self
                     .node_handler
                     .network()
-                    .connect(Transport::FramedTcp, socket_addr).unwrap();
+                    .connect(Transport::FramedTcp, socket_addr)
+                    .unwrap();
 
                 println!("{:?}", self.node_handler.network().is_ready(new_endpoint.resource_id()));
-
 
                 while self.node_handler.network().send(new_endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                     println!("Waiting for response...");
@@ -303,7 +303,6 @@ impl NodeState {
         println!("{}, {s}: search successfully", e);
         println!("{}", self.finger_table[e]);
 
-
         println!("{}, {}", self.finger_table[e], endpoint);
 
         let message = Message::ForwardedJoin(self.finger_table[e]);
@@ -316,7 +315,6 @@ impl NodeState {
 
         // self.node_handler.network().remove(endpoint2.resource_id());
         // self.node_handler.network().remove(endpoint.resource_id());
-
 
         //todo Check if it's closer this one or the one that is predecessor
         // NB: it won't be unless mid = e at the end (CREDO)
