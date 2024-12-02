@@ -52,7 +52,7 @@ impl NodeState {
 
     pub fn run(mut self) {
         if self.self_addr.port() == 9000 {
-            let mex2 = Message::Join(self.self_addr.clone());
+            let mex2 = Message::Join(self.self_addr);
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
@@ -72,7 +72,7 @@ impl NodeState {
         }
 
         if self.self_addr.port() == 8910 {
-            let mex2 = Message::Join(self.self_addr.clone());
+            let mex2 = Message::Join(self.self_addr);
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
@@ -109,7 +109,7 @@ impl NodeState {
     }
 
     fn binary_handler(&mut self, endpoint: Endpoint, input_data: &[u8]) {
-        match bincode::deserialize(&input_data) {
+        match bincode::deserialize(input_data) {
             Ok(message) => {
                 self.message_handler(endpoint, message);
             }
@@ -123,7 +123,6 @@ impl NodeState {
                 //todo remove (credo, i have to check)
                 if self.known_peers.contains(&x2) {
                     println!("Server is already in");
-                    return;
                 }
             }
             Message::ScanningFor(_, _) => {}
@@ -152,7 +151,7 @@ impl NodeState {
                 println!("{mex}")
             }
             Message::AddSuccessor(address) => {
-                //println!("Add succesossr {endpoint}, {mex} {}", self.self_addr);
+                //println!("Add successor {endpoint}, {mex} {}", self.self_addr);
                 self.finger_table.insert(0, address);
 
                 println!("{}, {:?}", self.self_addr, self.finger_table);
@@ -165,7 +164,6 @@ impl NodeState {
                 let output_data = bincode::serialize(&join_message).unwrap();
 
                 self.node_handler.network().remove(endpoint.resource_id());
-                let mut y = true;
 
                 let (new_endpoint, _) = self
                     .node_handler
