@@ -3,6 +3,7 @@ use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::thread::sleep;
 use std::time::Duration;
@@ -23,18 +24,18 @@ pub struct NodeState {
 }
 
 impl NodeState {
-    pub fn new(ip: IpAddr, port: u16) -> Self {
+    pub fn new(ip: IpAddr, port: u16) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
 
         let socket = SocketAddr::new(ip, port);
 
-        handler.network().listen(Transport::FramedTcp, socket).unwrap();
+        handler.network().listen(Transport::FramedTcp, socket)?;
 
         println!("Discovery server running at {}", socket);
 
         let id = Sha256::digest(socket.to_string().as_bytes()).to_vec();
 
-        Self {
+        Ok(Self {
             handler,
             id,
             listener: Some(listener),
@@ -44,7 +45,7 @@ impl NodeState {
             predecessor: None,
             gossip_interval: Default::default(),
             sha: Sha256::new(),
-        }
+        })
     }
 
     pub fn run(mut self) {
