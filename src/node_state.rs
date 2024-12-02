@@ -50,44 +50,35 @@ impl NodeState {
 
     pub fn run(mut self) {
         if self.self_addr.port() == 9000 {
-            let mex2 = ChordMessage::Join(self.self_addr);
-            match bincode::serialize(&mex2) {
-                Ok(output_data) => {
-                    let (endpoint, _) = self
-                        .handler
-                        .network()
-                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
-                        .unwrap();
+            let message = ChordMessage::Join(self.self_addr);
+            let serialized = bincode::serialize(&message).unwrap();
 
-                    while self.handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                        println!("Waiting for response...");
-                    } //todo work on this for a better mechanism
-                }
-                Err(x) => {
-                    println!("{:?}", x);
-                }
-            }
+            let (endpoint, _) = self
+                .handler
+                .network()
+                .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                .unwrap();
+
+            while self.handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
+                println!("Waiting for response...");
+            } //todo work on this for a better mechanism
         }
 
         if self.self_addr.port() == 8910 {
-            let mex2 = ChordMessage::Join(self.self_addr);
-            match bincode::serialize(&mex2) {
-                Ok(output_data) => {
-                    let (endpoint, _) = self
-                        .handler
-                        .network()
-                        .connect(Transport::FramedTcp, "127.0.0.1:8911")
-                        .unwrap();
+            let message = ChordMessage::Join(self.self_addr);
+            let serialized = bincode::serialize(&message).unwrap();
 
-                    while self.handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                        println!("Waiting for response...");
-                    } //todo work on this for a better mechanism
-                }
-                Err(x) => {
-                    println!("{:?}", x);
-                }
-            }
+            let (endpoint, _) = self
+                .handler
+                .network()
+                .connect(Transport::FramedTcp, "127.0.0.1:8911")
+                .unwrap();
+
+            while self.handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
+                println!("Waiting for response...");
+            } //todo work on this for a better mechanism
         }
+
         let node_listener = self.listener.take().unwrap();
         node_listener.for_each(move |event| match event.network() {
             NetEvent::Message(endpoint, input_data) => {
