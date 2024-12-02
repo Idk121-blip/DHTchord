@@ -26,13 +26,13 @@ impl NodeState {
     pub fn new(ip: IpAddr, port: u16) -> Self {
         let (handler, listener) = node::split();
 
-        let listen_addr = SocketAddr::new(ip, port);
+        let socket = SocketAddr::new(ip, port);
 
-        handler.network().listen(Transport::FramedTcp, listen_addr).unwrap();
+        handler.network().listen(Transport::FramedTcp, socket).unwrap();
 
-        println!("Discovery server running at {}", listen_addr);
+        println!("Discovery server running at {}", socket);
 
-        let id = Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
+        let id = Sha256::digest(socket.to_string().as_bytes()).to_vec();
 
         Self {
             handler,
