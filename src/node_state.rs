@@ -23,10 +23,10 @@ pub struct NodeState {
 }
 
 impl NodeState {
-    pub fn new(ip_addr: IpAddr, port: u16) -> Self {
+    pub fn new(ip: IpAddr, port: u16) -> Self {
         let (node_handler, node_listener) = node::split();
 
-        let listen_addr = SocketAddr::new(ip_addr, port);
+        let listen_addr = SocketAddr::new(ip, port);
 
         node_handler
             .network()
@@ -41,7 +41,7 @@ impl NodeState {
             node_handler,
             id,
             node_listener: Some(node_listener),
-            self_addr: SocketAddr::new(ip_addr, port),
+            self_addr: SocketAddr::new(ip, port),
             known_peers: Default::default(),
             finger_table: vec![],
             predecessor: None,
