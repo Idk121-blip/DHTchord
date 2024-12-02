@@ -24,16 +24,21 @@ pub struct NodeState {
 
 impl NodeState {
     pub fn new(ip_addr: IpAddr, port: u16) -> Self {
-        let (handler, node_listener) = node::split();
+        let (node_handler, node_listener) = node::split();
 
-        let listen_addr = &(ip_addr.to_string() + ":" + &(port).to_string());
-        handler.network().listen(Transport::FramedTcp, listen_addr).unwrap();
+        let listen_addr = SocketAddr::new(ip_addr, port);
+
+        node_handler
+            .network()
+            .listen(Transport::FramedTcp, listen_addr)
+            .unwrap();
 
         println!("Discovery server running at {}", listen_addr);
 
         let id = Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
+
         Self {
-            node_handler: handler,
+            node_handler,
             id,
             node_listener: Some(node_listener),
             self_addr: SocketAddr::new(ip_addr, port),
