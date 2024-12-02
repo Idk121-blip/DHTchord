@@ -8,8 +8,8 @@ use std::thread::sleep;
 use std::time::Duration;
 
 pub struct NodeState {
-    node_handler: NodeHandler<()>,
-    node_listener: Option<NodeListener<()>>,
+    handler: NodeHandler<()>,
+    listener: Option<NodeListener<()>>,
     id: Vec<u8>,
     /// The node's own address.
     self_addr: SocketAddr,
@@ -24,23 +24,20 @@ pub struct NodeState {
 
 impl NodeState {
     pub fn new(ip: IpAddr, port: u16) -> Self {
-        let (node_handler, node_listener) = node::split();
+        let (handler, listener) = node::split();
 
         let listen_addr = SocketAddr::new(ip, port);
 
-        node_handler
-            .network()
-            .listen(Transport::FramedTcp, listen_addr)
-            .unwrap();
+        handler.network().listen(Transport::FramedTcp, listen_addr).unwrap();
 
         println!("Discovery server running at {}", listen_addr);
 
         let id = Sha256::digest(listen_addr.to_string().as_bytes()).to_vec();
 
         Self {
-            node_handler,
+            handler,
             id,
-            node_listener: Some(node_listener),
+            listener: Some(listener),
             self_addr: SocketAddr::new(ip, port),
             known_peers: Default::default(),
             finger_table: vec![],
@@ -56,12 +53,12 @@ impl NodeState {
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
-                        .node_handler
+                        .handler
                         .network()
                         .connect(Transport::FramedTcp, "127.0.0.1:8911")
                         .unwrap();
 
-                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                    while self.handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         println!("Waiting for response...");
                     } //todo work on this for a better mechanism
                 }
@@ -76,12 +73,12 @@ impl NodeState {
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
-                        .node_handler
+                        .handler
                         .network()
                         .connect(Transport::FramedTcp, "127.0.0.1:8911")
                         .unwrap();
 
-                    while self.node_handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                    while self.handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         println!("Waiting for response...");
                     } //todo work on this for a better mechanism
                 }
@@ -90,7 +87,7 @@ impl NodeState {
                 }
             }
         }
-        let node_listener = self.node_listener.take().unwrap();
+        let node_listener = self.listener.take().unwrap();
         node_listener.for_each(move |event| match event.network() {
             NetEvent::Message(endpoint, input_data) => {
                 //
@@ -103,13 +100,13 @@ impl NodeState {
             }
             NetEvent::Connected(endpoint, _result) => {
                 println!("{}: request from ip: {endpoint} connected: {_result}", self.self_addr);
-                println!("{:?}", self.node_handler.is_running());
-                println!("{:?}", self.node_handler.network().is_ready(endpoint.resource_id()));
+                println!("{:?}", self.handler.is_running());
+                println!("{:?}", self.handler.network().is_ready(endpoint.resource_id()));
                 // self.node_handler.network().connect(Transport::FramedTcp, endpoint.addr());
             }
             NetEvent::Accepted(_, _) => {}
             NetEvent::Disconnected(x) => {
-                self.node_handler.network().remove(x.resource_id());
+                self.handler.network().remove(x.resource_id());
             }
         });
     }
@@ -132,7 +129,7 @@ impl NodeState {
                 //let (endpoint, _ )= self.node_handler.network().connect(Transport::FramedTcp, &*ip).unwrap();
                 println!("{endpoint}");
                 //sleep(Duration::from_secs(3));
-                self.node_handler.network().send(endpoint, &output_data);
+                self.handler.network().send(endpoint, &output_data);
             }
             ChordMessage::Join(socket_addr) => {
                 println!(
@@ -160,17 +157,17 @@ impl NodeState {
                 let join_message = ChordMessage::Join(self.self_addr);
                 let output_data = bincode::serialize(&join_message).unwrap();
 
-                self.node_handler.network().remove(endpoint.resource_id());
+                self.handler.network().remove(endpoint.resource_id());
 
                 let (new_endpoint, _) = self
-                    .node_handler
+                    .handler
                     .network()
                     .connect(Transport::FramedTcp, socket_addr)
                     .unwrap();
 
-                println!("{:?}", self.node_handler.network().is_ready(new_endpoint.resource_id()));
+                println!("{:?}", self.handler.network().is_ready(new_endpoint.resource_id()));
 
-                while self.node_handler.network().send(new_endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                while self.handler.network().send(new_endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                     println!("Waiting for response...");
                     sleep(Duration::from_secs(1));
                 }
@@ -186,7 +183,7 @@ impl NodeState {
         let node_id = Sha256::digest(socket_addr.to_string().as_bytes()).to_vec();
 
         if self.has_empty_table(&endpoint, &socket_addr) {
-            self.node_handler.network().remove(endpoint.resource_id());
+            self.handler.network().remove(endpoint.resource_id());
             println!("Node added to empty table");
             return;
         }
@@ -196,7 +193,7 @@ impl NodeState {
         let predecessor = Sha256::digest(self.predecessor.unwrap().to_string().as_bytes()).to_vec(); //todo check the unwrap
 
         if self.insert_near_self(&endpoint, &socket_addr, &node_id, successor, predecessor) {
-            self.node_handler.network().remove(endpoint.resource_id());
+            self.handler.network().remove(endpoint.resource_id());
             return;
         }
 
@@ -204,7 +201,7 @@ impl NodeState {
 
         self.binary_search(&node_id, &endpoint);
 
-        self.node_handler.network().remove(endpoint.resource_id());
+        self.handler.network().remove(endpoint.resource_id());
     }
 
     fn has_empty_table(&mut self, endpoint: &Endpoint, socket_addr: &SocketAddr) -> bool {
@@ -214,9 +211,9 @@ impl NodeState {
             self.finger_table.push(*socket_addr);
 
             let message = bincode::serialize(&ChordMessage::AddSuccessor(self.self_addr)).unwrap();
-            self.node_handler.network().send(*endpoint, &message);
+            self.handler.network().send(*endpoint, &message);
             let message = bincode::serialize(&ChordMessage::AddPredecessor(self.self_addr)).unwrap();
-            self.node_handler.network().send(*endpoint, &message);
+            self.handler.network().send(*endpoint, &message);
             println!("{:?}", self.finger_table);
             println!("join successfully");
             return true;
@@ -261,7 +258,7 @@ impl NodeState {
                 ChordMessage::AddPredecessor(self.self_addr)
             };
             let output_data = bincode::serialize(&first_message).unwrap();
-            self.node_handler.network().send(*endpoint, &output_data);
+            self.handler.network().send(*endpoint, &output_data);
 
             let second_message = if is_predecessor {
                 ChordMessage::AddPredecessor(self.predecessor.unwrap())
@@ -269,7 +266,7 @@ impl NodeState {
                 ChordMessage::AddSuccessor(self.finger_table[0])
             };
             let output_data = bincode::serialize(&second_message).unwrap();
-            self.node_handler.network().send(*endpoint, &output_data);
+            self.handler.network().send(*endpoint, &output_data);
 
             if is_predecessor {
                 self.predecessor = Some(*socket_addr);
@@ -307,7 +304,7 @@ impl NodeState {
         let message = ChordMessage::ForwardedJoin(self.finger_table[e]);
         let output_data = bincode::serialize(&message).unwrap();
 
-        while self.node_handler.network().send(*endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+        while self.handler.network().send(*endpoint, &output_data) == SendStatus::ResourceNotAvailable {
             println!("Waiting for response...");
             sleep(Duration::from_millis(1000));
         }
