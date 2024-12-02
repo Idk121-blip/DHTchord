@@ -7,6 +7,7 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::thread::sleep;
 use std::time::Duration;
+use tracing::{info, trace};
 
 pub struct NodeState {
     handler: NodeHandler<()>,
@@ -31,8 +32,6 @@ impl NodeState {
 
         handler.network().listen(Transport::FramedTcp, socket)?;
 
-        println!("Discovery server running at {}", socket);
-
         let id = Sha256::digest(socket.to_string().as_bytes()).to_vec();
 
         Ok(Self {
@@ -49,6 +48,7 @@ impl NodeState {
     }
 
     pub fn run(mut self) {
+        info!("start");
         if self.self_addr.port() == 9000 {
             let message = ChordMessage::Join(self.self_addr);
             let serialized = bincode::serialize(&message).unwrap();
@@ -60,7 +60,7 @@ impl NodeState {
                 .unwrap();
 
             while self.handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
-                println!("Waiting for response...");
+                trace!("Waiting for response...");
             } //todo work on this for a better mechanism
         }
 
@@ -75,7 +75,7 @@ impl NodeState {
                 .unwrap();
 
             while self.handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
-                println!("Waiting for response...");
+                trace!("Waiting for response...");
             } //todo work on this for a better mechanism
         }
 
@@ -87,13 +87,13 @@ impl NodeState {
                     Ok(message) => {
                         self.handle_message(endpoint, message);
                     }
-                    Err(x) => println!("{:?}", x),
+                    Err(x) => trace!("{:?}", x),
                 }
             }
             NetEvent::Connected(endpoint, _result) => {
-                println!("{}: request from ip: {endpoint} connected: {_result}", self.self_addr);
-                println!("{:?}", self.handler.is_running());
-                println!("{:?}", self.handler.network().is_ready(endpoint.resource_id()));
+                trace!("request from ip: {endpoint} connected: {_result}");
+                trace!("{:?}", self.handler.is_running());
+                trace!("{:?}", self.handler.network().is_ready(endpoint.resource_id()));
                 // self.node_handler.network().connect(Transport::FramedTcp, endpoint.addr());
             }
             NetEvent::Accepted(_, _) => {}
@@ -108,43 +108,38 @@ impl NodeState {
             ChordMessage::RegisterServer(_x1, x2) => {
                 //todo remove (credo, i have to check)
                 if self.known_peers.contains(&x2) {
-                    println!("Server is already in");
+                    trace!("Server is already in");
                 }
             }
             ChordMessage::ScanningFor(_, _) => {}
             ChordMessage::ServerAdded(_, _) => {}
             ChordMessage::SendStringMessage(mex, addr) => {
                 let mex2 = ChordMessage::Message(mex);
-                println!("Send message from {}, {}", addr, self.self_addr);
+                trace!("Send message from {}, {}", addr, self.self_addr);
                 let output_data = bincode::serialize(&mex2).unwrap();
 
                 //let (endpoint, _ )= self.node_handler.network().connect(Transport::FramedTcp, &*ip).unwrap();
-                println!("{endpoint}");
+                trace!("{endpoint}");
                 //sleep(Duration::from_secs(3));
                 self.handler.network().send(endpoint, &output_data);
             }
             ChordMessage::Join(socket_addr) => {
-                println!(
-                    "{}: request from endpoint: {endpoint} ip: {socket_addr}",
-                    self.self_addr
-                );
+                trace!("request from endpoint: {endpoint} ip: {socket_addr}",);
                 self.handle_join(endpoint, socket_addr);
                 //Find the closest to that position
             }
             ChordMessage::Message(mex) => {
-                println!("Message received from other peer");
-                println!("My ip {:?}", self.self_addr);
-                println!("{mex}")
+                trace!("Message received from other peer: {mex}");
             }
             ChordMessage::AddSuccessor(address) => {
-                //println!("Add successor {endpoint}, {mex} {}", self.self_addr);
+                //trace!("Add successor {endpoint}, {mex} {}", self.self_addr);
                 self.finger_table.insert(0, address);
 
-                println!("{}, {:?}", self.self_addr, self.finger_table);
+                trace!("{}, {:?}", self.self_addr, self.finger_table);
             }
             ChordMessage::AddPredecessor(address) => self.predecessor = Some(address),
             ChordMessage::ForwardedJoin(socket_addr) => {
-                println!("Oh shit. here we go again");
+                trace!("Oh shit. here we go again");
 
                 let join_message = ChordMessage::Join(self.self_addr);
                 let output_data = bincode::serialize(&join_message).unwrap();
@@ -157,10 +152,10 @@ impl NodeState {
                     .connect(Transport::FramedTcp, socket_addr)
                     .unwrap();
 
-                println!("{:?}", self.handler.network().is_ready(new_endpoint.resource_id()));
+                trace!("{:?}", self.handler.network().is_ready(new_endpoint.resource_id()));
 
                 while self.handler.network().send(new_endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                    println!("Waiting for response...");
+                    trace!("Waiting for response...");
                     sleep(Duration::from_secs(1));
                 }
             }
@@ -170,13 +165,13 @@ impl NodeState {
     }
 
     fn handle_join(&mut self, endpoint: Endpoint, socket_addr: SocketAddr) {
-        println!("entering join process");
+        trace!("entering join process");
 
         let node_id = Sha256::digest(socket_addr.to_string().as_bytes()).to_vec();
 
         if self.has_empty_table(&endpoint, &socket_addr) {
             self.handler.network().remove(endpoint.resource_id());
-            println!("Node added to empty table");
+            trace!("Node added to empty table");
             return;
         }
 
@@ -189,7 +184,7 @@ impl NodeState {
             return;
         }
 
-        println!("Good so far");
+        trace!("Good so far");
 
         self.binary_search(&node_id, &endpoint);
 
@@ -198,7 +193,7 @@ impl NodeState {
 
     fn has_empty_table(&mut self, endpoint: &Endpoint, socket_addr: &SocketAddr) -> bool {
         if self.finger_table.is_empty() {
-            println!("{}: request from ip: {endpoint} joining: {socket_addr}", self.self_addr);
+            trace!("{}: request from ip: {endpoint} joining: {socket_addr}", self.self_addr);
             self.predecessor = Some(*socket_addr);
             self.finger_table.push(*socket_addr);
 
@@ -206,8 +201,8 @@ impl NodeState {
             self.handler.network().send(*endpoint, &message);
             let message = bincode::serialize(&ChordMessage::AddPredecessor(self.self_addr)).unwrap();
             self.handler.network().send(*endpoint, &message);
-            println!("{:?}", self.finger_table);
-            println!("join successfully");
+            trace!("{:?}", self.finger_table);
+            trace!("join successfully");
             return true;
         }
         false
@@ -239,9 +234,9 @@ impl NodeState {
             || (!is_predecessor && *node_id > self.id && *node_id <= node_near_self)
         {
             if is_predecessor {
-                println!("{}: Inserting between predecessor and self", self.self_addr);
+                trace!("{}: Inserting between predecessor and self", self.self_addr);
             } else {
-                println!("{}: Inserting between self and successor", self.self_addr);
+                trace!("{}: Inserting between self and successor", self.self_addr);
             };
 
             let first_message = if is_predecessor {
@@ -266,8 +261,8 @@ impl NodeState {
                 self.finger_table.insert(0, *socket_addr);
             }
 
-            println!("{:?}", self.finger_table);
-            println!("join successfully");
+            trace!("{:?}", self.finger_table);
+            trace!("join successfully");
 
             return true;
         }
@@ -288,16 +283,16 @@ impl NodeState {
             }
         }
 
-        println!("{}, {s}: search successfully", e);
-        println!("{}", self.finger_table[e]);
+        trace!("{}, {s}: search successfully", e);
+        trace!("{}", self.finger_table[e]);
 
-        println!("{}, {}", self.finger_table[e], endpoint);
+        trace!("{}, {}", self.finger_table[e], endpoint);
 
         let message = ChordMessage::ForwardedJoin(self.finger_table[e]);
         let output_data = bincode::serialize(&message).unwrap();
 
         while self.handler.network().send(*endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-            println!("Waiting for response...");
+            trace!("Waiting for response...");
             sleep(Duration::from_millis(1000));
         }
 
