@@ -249,12 +249,11 @@ impl NodeState {
         if (is_predecessor && *node_id < self.id && *node_id >= node_near_self)
             || (!is_predecessor && *node_id > self.id && *node_id <= node_near_self)
         {
-            let role = if is_predecessor {
-                "predecessor and self"
+            if is_predecessor {
+                println!("{}: Inserting between predecessor and self", self.self_addr);
             } else {
-                "self and successor"
+                println!("{}: Inserting between self and successor", self.self_addr);
             };
-            println!("{}: Inserting between {}", self.self_addr, role);
 
             let first_message = if is_predecessor {
                 Message::AddSuccessor(self.self_addr)
