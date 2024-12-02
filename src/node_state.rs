@@ -1,4 +1,4 @@
-use crate::common::Message::{self};
+use crate::common::ChordMessage::{self};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
@@ -52,7 +52,7 @@ impl NodeState {
 
     pub fn run(mut self) {
         if self.self_addr.port() == 9000 {
-            let mex2 = Message::Join(self.self_addr);
+            let mex2 = ChordMessage::Join(self.self_addr);
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
@@ -72,7 +72,7 @@ impl NodeState {
         }
 
         if self.self_addr.port() == 8910 {
-            let mex2 = Message::Join(self.self_addr);
+            let mex2 = ChordMessage::Join(self.self_addr);
             match bincode::serialize(&mex2) {
                 Ok(output_data) => {
                     let (endpoint, _) = self
@@ -114,18 +114,18 @@ impl NodeState {
         });
     }
 
-    fn handle_message(&mut self, endpoint: Endpoint, message: Message) {
+    fn handle_message(&mut self, endpoint: Endpoint, message: ChordMessage) {
         match message {
-            Message::RegisterServer(_x1, x2) => {
+            ChordMessage::RegisterServer(_x1, x2) => {
                 //todo remove (credo, i have to check)
                 if self.known_peers.contains(&x2) {
                     println!("Server is already in");
                 }
             }
-            Message::ScanningFor(_, _) => {}
-            Message::ServerAdded(_, _) => {}
-            Message::SendStringMessage(mex, addr) => {
-                let mex2 = Message::Message(mex);
+            ChordMessage::ScanningFor(_, _) => {}
+            ChordMessage::ServerAdded(_, _) => {}
+            ChordMessage::SendStringMessage(mex, addr) => {
+                let mex2 = ChordMessage::Message(mex);
                 println!("Send message from {}, {}", addr, self.self_addr);
                 let output_data = bincode::serialize(&mex2).unwrap();
 
@@ -134,7 +134,7 @@ impl NodeState {
                 //sleep(Duration::from_secs(3));
                 self.node_handler.network().send(endpoint, &output_data);
             }
-            Message::Join(socket_addr) => {
+            ChordMessage::Join(socket_addr) => {
                 println!(
                     "{}: request from endpoint: {endpoint} ip: {socket_addr}",
                     self.self_addr
@@ -142,22 +142,22 @@ impl NodeState {
                 self.handle_join(endpoint, socket_addr);
                 //Find the closest to that position
             }
-            Message::Message(mex) => {
+            ChordMessage::Message(mex) => {
                 println!("Message received from other peer");
                 println!("My ip {:?}", self.self_addr);
                 println!("{mex}")
             }
-            Message::AddSuccessor(address) => {
+            ChordMessage::AddSuccessor(address) => {
                 //println!("Add successor {endpoint}, {mex} {}", self.self_addr);
                 self.finger_table.insert(0, address);
 
                 println!("{}, {:?}", self.self_addr, self.finger_table);
             }
-            Message::AddPredecessor(address) => self.predecessor = Some(address),
-            Message::ForwardedJoin(socket_addr) => {
+            ChordMessage::AddPredecessor(address) => self.predecessor = Some(address),
+            ChordMessage::ForwardedJoin(socket_addr) => {
                 println!("Oh shit. here we go again");
 
-                let join_message = Message::Join(self.self_addr);
+                let join_message = ChordMessage::Join(self.self_addr);
                 let output_data = bincode::serialize(&join_message).unwrap();
 
                 self.node_handler.network().remove(endpoint.resource_id());
@@ -213,9 +213,9 @@ impl NodeState {
             self.predecessor = Some(*socket_addr);
             self.finger_table.push(*socket_addr);
 
-            let message = bincode::serialize(&Message::AddSuccessor(self.self_addr)).unwrap();
+            let message = bincode::serialize(&ChordMessage::AddSuccessor(self.self_addr)).unwrap();
             self.node_handler.network().send(*endpoint, &message);
-            let message = bincode::serialize(&Message::AddPredecessor(self.self_addr)).unwrap();
+            let message = bincode::serialize(&ChordMessage::AddPredecessor(self.self_addr)).unwrap();
             self.node_handler.network().send(*endpoint, &message);
             println!("{:?}", self.finger_table);
             println!("join successfully");
@@ -256,17 +256,17 @@ impl NodeState {
             };
 
             let first_message = if is_predecessor {
-                Message::AddSuccessor(self.self_addr)
+                ChordMessage::AddSuccessor(self.self_addr)
             } else {
-                Message::AddPredecessor(self.self_addr)
+                ChordMessage::AddPredecessor(self.self_addr)
             };
             let output_data = bincode::serialize(&first_message).unwrap();
             self.node_handler.network().send(*endpoint, &output_data);
 
             let second_message = if is_predecessor {
-                Message::AddPredecessor(self.predecessor.unwrap())
+                ChordMessage::AddPredecessor(self.predecessor.unwrap())
             } else {
-                Message::AddSuccessor(self.finger_table[0])
+                ChordMessage::AddSuccessor(self.finger_table[0])
             };
             let output_data = bincode::serialize(&second_message).unwrap();
             self.node_handler.network().send(*endpoint, &output_data);
@@ -304,7 +304,7 @@ impl NodeState {
 
         println!("{}, {}", self.finger_table[e], endpoint);
 
-        let message = Message::ForwardedJoin(self.finger_table[e]);
+        let message = ChordMessage::ForwardedJoin(self.finger_table[e]);
         let output_data = bincode::serialize(&message).unwrap();
 
         while self.node_handler.network().send(*endpoint, &output_data) == SendStatus::ResourceNotAvailable {

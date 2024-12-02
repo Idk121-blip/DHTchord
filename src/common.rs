@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize)]
-pub enum Message {
+pub enum ChordMessage {
     //<T>
     RegisterServer(String, SocketAddr),
 
