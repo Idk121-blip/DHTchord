@@ -1,3 +1,4 @@
+use message_io::network::Endpoint;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
@@ -24,6 +25,11 @@ pub enum ChordMessage {
 
     Rejected,
 
-    ForwardedJoin(SocketAddr),
+    ForwardedJoin(String),
     // SendMessage(Box<Message<T>>, SocketAddr),
+}
+
+
+pub(crate) enum Signals {
+    ForwardedJoin(Endpoint)
 }

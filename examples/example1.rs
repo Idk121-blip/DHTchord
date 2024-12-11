@@ -1,5 +1,7 @@
 use std::net::IpAddr;
 use std::thread;
+use std::thread::sleep;
+use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use DHTchord::node_state::NodeState;
 
@@ -30,6 +32,7 @@ pub fn main() {
             //
             match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "8910".parse().unwrap()) {
                 Ok(server2) => {
+                    sleep(Duration::from_secs(2));
                     let span = tracing::trace_span!("127.0.0.1:8910");
                     span.in_scope(|| server2.run());
                 }
@@ -40,9 +43,9 @@ pub fn main() {
         });
         scope.spawn(|| {
             //
-            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "9000".parse().unwrap()) {
+            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7777".parse().unwrap()) {
                 Ok(server3) => {
-                    let span = tracing::trace_span!("127.0.0.1:9000");
+                    let span = tracing::trace_span!("127.0.0.1:8888");
                     span.in_scope(|| server3.run());
                 }
                 Err(error) => {
