@@ -3,7 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize)]
-pub enum ChordMessage {
+pub enum Message
+// <T>
+// where
+//     T: Serialize,
+{
+    ChordMessage(ChordMessage),
+    UserMessage(UserMessage<isize>),
+    // Phantom(T),
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ChordMessage {
     //<T>
     RegisterServer(String, SocketAddr),
 
@@ -29,7 +40,15 @@ pub enum ChordMessage {
     // SendMessage(Box<Message<T>>, SocketAddr),
 }
 
-
 pub(crate) enum Signals {
-    ForwardedJoin(Endpoint)
+    ForwardedJoin(Endpoint),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum UserMessage<T>
+where
+    T: Serialize,
+{
+    Put(T),
+    Get(T),
 }
