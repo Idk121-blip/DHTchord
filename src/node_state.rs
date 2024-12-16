@@ -4,10 +4,14 @@ use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use std::io;
+use std::fs::File;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::Add;
+use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{fs, io};
 use tracing::{info, trace};
 
 pub struct NodeState {
@@ -15,7 +19,6 @@ pub struct NodeState {
     listener: NodeListener<Signals>,
     config: NodeConfig,
 }
-
 
 pub struct NodeConfig {
     id: Vec<u8>,
@@ -77,7 +80,6 @@ impl NodeState {
         })
     }
 
-
     pub fn run(self) {
         let Self {
             handler,
@@ -123,6 +125,13 @@ impl NodeState {
                         trace!("Waiting for response");
                     }
                 }
+                Signals::ForwardPut(endpoint, file) => {
+                    trace!("Forwarding put");
+                    let output_data = bincode::serialize(&Message::UserMessage(UserMessage::Put(file))).unwrap();
+                    while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        trace!("Waiting for response");
+                    }
+                }
             },
         });
     }
@@ -134,14 +143,6 @@ fn handle_server_message(
     message: ChordMessage,
 ) {
     match message {
-        ChordMessage::RegisterServer(_x1, x2) => {
-            //todo remove (credo, i have to check)
-            if config.known_peers.contains(&x2) {
-                trace!("Server is already in");
-            }
-        }
-        ChordMessage::ScanningFor(_, _) => {}
-        ChordMessage::ServerAdded(_, _) => {}
         ChordMessage::SendStringMessage(mex, addr) => {
             let message = ChordMessage::Message(mex);
             trace!("Send message from {}, {}", addr, config.self_addr);
@@ -160,7 +161,6 @@ fn handle_server_message(
         ChordMessage::AddSuccessor(addr) => {
             //trace!("Add successor {endpoint}, {mex} {}", self.config.self_addr);
             config.finger_table.insert(0, addr);
-
             trace!("{}, {:?}", config.self_addr, config.finger_table);
         }
         ChordMessage::AddPredecessor(addr) => config.predecessor = Some(addr),
@@ -171,8 +171,22 @@ fn handle_server_message(
 
             handler.signals().send(Signals::ForwardedJoin(new_endpoint));
         }
+    }
+}
 
-        _ => {}
+fn handle_user_message(
+    handler: &NodeHandler<Signals>,
+    config: &mut NodeConfig,
+    endpoint: Endpoint,
+    message: UserMessage,
+) {
+    match message {
+        UserMessage::Put(file) => {
+            //forwardare il put per ora salvataggio in cartella qui
+            trace!("Received file");
+            let _ = handle_user_put(file, config);
+        }
+        UserMessage::Get(_) => {}
     }
 }
 
@@ -206,13 +220,38 @@ fn handle_join(handler: &NodeHandler<Signals>, config: &mut NodeConfig, endpoint
 
     forward_request(handler, config, &node_id, &endpoint);
 }
+fn handle_user_put(file: crate::common::File, config: &mut NodeConfig) -> io::Result<()> {
+    let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
+    let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-fn handle_user_message(
-    handler: &NodeHandler<Signals>,
-    config: &mut NodeConfig,
-    endpoint: Endpoint,
-    message: UserMessage<isize>,
-) {}
+    if digested_file_name > config.id && digested_file_name < successor {
+        return save_in_server(file, config.self_addr.port() as usize);
+    }
+
+    let forwarding_index = binary_search(config, &digested_file_name);
+
+    Ok(())
+}
+
+fn save_in_server(file: crate::common::File, port: usize) -> io::Result<()> {
+    let crate::common::File { name, extension, data } = file;
+    let destination = &("server/"
+        .to_string()
+        .add(&port.to_string())
+        .add("/")
+        .add(name.as_str())
+        .add(extension.as_str()));
+    let path = Path::new(destination);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut file = File::create(destination)?;
+    file.write_all(&data)?;
+    trace!("File stored successfully");
+    Ok(())
+}
 
 fn insert_in_empty_table(
     handler: &NodeHandler<Signals>,
@@ -235,10 +274,12 @@ fn insert_in_empty_table(
     trace!("join successfully");
 }
 
-fn insert_between_self_and_predecessor(handler: &NodeHandler<Signals>,
-                                       config: &mut NodeConfig,
-                                       endpoint: &Endpoint,
-                                       addr: &SocketAddr) {
+fn insert_between_self_and_predecessor(
+    handler: &NodeHandler<Signals>,
+    config: &mut NodeConfig,
+    endpoint: &Endpoint,
+    addr: &SocketAddr,
+) {
     let add_successor_message = Message::ChordMessage(ChordMessage::AddSuccessor(config.self_addr));
     let serialized = bincode::serialize(&add_successor_message).unwrap();
     handler.network().send(*endpoint, &serialized);
@@ -270,7 +311,9 @@ fn insert_between_self_and_successor(
 
 fn forward_request(handler: &NodeHandler<Signals>, config: &NodeConfig, node_id: &Vec<u8>, endpoint: &Endpoint) {
     let forward_position = binary_search(config, node_id);
-    let message = Message::ChordMessage(ChordMessage::ForwardedJoin(config.finger_table[forward_position].to_string()));
+    let message = Message::ChordMessage(ChordMessage::ForwardedJoin(
+        config.finger_table[forward_position].to_string(),
+    ));
     let serialized = bincode::serialize(&message).unwrap();
 
     while handler.network().send(*endpoint, &serialized) == SendStatus::ResourceNotAvailable {
@@ -278,14 +321,14 @@ fn forward_request(handler: &NodeHandler<Signals>, config: &NodeConfig, node_id:
         sleep(Duration::from_millis(1000));
     }
 }
-fn binary_search(config: &NodeConfig, node_id: &Vec<u8>) -> usize {
+fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> usize {
     let mut s = 0;
     let mut e = config.finger_table.len();
     while s < e {
         let mid = (s + e) / 2;
         let mid_id = Sha256::digest(config.finger_table[mid].to_string().as_bytes()).to_vec();
 
-        if mid_id > *node_id {
+        if mid_id > *digested_vector {
             e = mid;
         } else {
             s = mid + 1;

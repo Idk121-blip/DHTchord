@@ -1,5 +1,5 @@
-use crate::common::Message;
 use crate::common::UserMessage::Put;
+use crate::common::{File, Message};
 use message_io::network::{NetEvent, Transport};
 use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
@@ -19,7 +19,11 @@ impl<T> User<T> {
         let (handler, listener) = node::split();
         let (_id, listen_address) = handler.network().listen(Transport::Ws, "0.0.0.0:0")?;
         trace!("{listen_address}");
-        Ok(Self { handler, listener, phantom: PhantomData })
+        Ok(Self {
+            handler,
+            listener,
+            phantom: PhantomData,
+        })
     }
 
     pub fn put(self, server_address: &str, sender: Sender<String>, data: T) {
@@ -28,9 +32,16 @@ impl<T> User<T> {
             .network()
             .connect_sync(Transport::Ws, server_address)
             .unwrap();
-        self.handler
-            .network()
-            .send(ep, &bincode::serialize(&Message::UserMessage(Put(12))).unwrap());
+        self.handler.network().send(
+            ep,
+            &bincode::serialize(&Message::UserMessage(Put(File {
+                name: "ciao".to_owned(),
+                extension: ".txt".to_owned(),
+                data: Vec::new(),
+            })))
+            .unwrap(),
+        );
+
         self.listener.for_each(move |event| match event.network() {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
