@@ -1,4 +1,4 @@
-use crate::common::UserMessage::Put;
+use crate::common::UserMessage::{Get, Put};
 use crate::common::{File, Message};
 use message_io::network::{NetEvent, Transport};
 use message_io::node;
@@ -46,6 +46,29 @@ impl<T> User<T> {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, _) => {
+                trace!("response from server, killing myself");
+                // processor.sender_option.unwrap().send("message received".to_string());
+                self.handler.stop();
+            }
+            NetEvent::Disconnected(_) => {}
+        });
+    }
+
+    pub fn get(self, server_address: &str, sender: Sender<String>, data: T) {
+        let (ep, _) = self
+            .handler
+            .network()
+            .connect_sync(Transport::Ws, server_address)
+            .unwrap();
+        self.handler.network().send(
+            ep,
+            &bincode::serialize(&Message::UserMessage(Get("ciao".to_string(), ".txt".to_string()))).unwrap(),
+        );
+
+        self.listener.for_each(move |event| match event.network() {
+            NetEvent::Connected(_, _) => {}
+            NetEvent::Accepted(_, _) => {}
+            NetEvent::Message(endpoint, bytes) => {
                 trace!("response from server, killing myself");
                 // processor.sender_option.unwrap().send("message received".to_string());
                 self.handler.stop();

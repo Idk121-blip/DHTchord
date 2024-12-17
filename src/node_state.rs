@@ -97,7 +97,7 @@ impl NodeState {
 
                         match message {
                             Message::UserMessage(user_message) => {
-                                trace!("Received user message: {:?}", user_message);
+                                trace!("Received user message");
                                 handle_user_message(&handler, &mut config, endpoint, user_message);
                             }
                             Message::ChordMessage(server_message) => {
@@ -117,10 +117,9 @@ impl NodeState {
                 }
             }
             NodeEvent::Signal(signal) => match signal {
-                Signals::ForwardedJoin(endpoint) => {
+                Signals::ForwardMessage(endpoint, message) => {
                     trace!("Starting Forwarded Join");
-                    let output_data =
-                        bincode::serialize(&Message::ChordMessage(ChordMessage::Join(config.self_addr))).unwrap();
+                    let output_data = bincode::serialize(&message).unwrap();
                     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         trace!("Waiting for response");
                     }
@@ -168,8 +167,13 @@ fn handle_server_message(
             trace!("Forwarded join, joining {addr}");
 
             let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
-
-            handler.signals().send(Signals::ForwardedJoin(new_endpoint));
+            let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
+            handler.signals().send(Signals::ForwardMessage(new_endpoint, message));
+        }
+        ChordMessage::ForwardedPut(addr, file) => {
+            trace!("Forwarded put");
+            handle_user_put(handler, file, config).unwrap();
+            //todo connect to user and send message with all is needed
         }
     }
 }
@@ -184,9 +188,10 @@ fn handle_user_message(
         UserMessage::Put(file) => {
             //forwardare il put per ora salvataggio in cartella qui
             trace!("Received file");
-            let _ = handle_user_put(file, config);
+            let _ = handle_user_put(handler, file, config);
+            //todo send message to client
         }
-        UserMessage::Get(_) => {}
+        UserMessage::Get(name, extension) => {}
     }
 }
 
@@ -220,15 +225,21 @@ fn handle_join(handler: &NodeHandler<Signals>, config: &mut NodeConfig, endpoint
 
     forward_request(handler, config, &node_id, &endpoint);
 }
-fn handle_user_put(file: crate::common::File, config: &mut NodeConfig) -> io::Result<()> {
+fn handle_user_put(handler: &NodeHandler<Signals>, file: crate::common::File, config: &NodeConfig) -> io::Result<()> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if digested_file_name > config.id && digested_file_name < successor {
+    if (digested_file_name > config.id && digested_file_name < successor) || config.finger_table.is_empty() {
         return save_in_server(file, config.self_addr.port() as usize);
     }
 
     let forwarding_index = binary_search(config, &digested_file_name);
+
+    let (forwarding_endpoint, _) = handler
+        .network()
+        .connect(Transport::Ws, config.finger_table[forwarding_index])?;
+
+    handler.signals().send(Signals::ForwardPut(forwarding_endpoint, file));
 
     Ok(())
 }
