@@ -42,7 +42,7 @@ pub(crate) enum Signals {
 pub enum UserMessage {
     ///Put(file bytes, file name,  extension)
     Put(File),
-    Get(String, String),
+    Get(String),
 }
 #[derive(Serialize, Deserialize)]
 pub struct File {

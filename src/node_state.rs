@@ -3,7 +3,7 @@ use crate::common::{Message, Signals, UserMessage};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
@@ -24,8 +24,9 @@ pub struct NodeConfig {
     id: Vec<u8>,
     /// The node's own address.
     self_addr: SocketAddr,
-    /// Known peers in the network.
-    known_peers: HashSet<SocketAddr>,
+    /// Maps hashed key to file name.
+    saved_files: HashMap<String, String>,
+    ///List of successors node
     finger_table: Vec<SocketAddr>,
     predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
@@ -44,7 +45,7 @@ impl NodeState {
         let config = NodeConfig {
             id,
             self_addr,
-            known_peers: Default::default(),
+            saved_files: Default::default(),
             finger_table: vec![],
             predecessor: None,
             gossip_interval: Default::default(),
@@ -191,7 +192,9 @@ fn handle_user_message(
             let _ = handle_user_put(handler, file, config);
             //todo send message to client
         }
-        UserMessage::Get(name, extension) => {}
+        UserMessage::Get(key) => {
+            handle_user_get(handler, config, key, endpoint);
+        }
     }
 }
 
@@ -225,12 +228,16 @@ fn handle_join(handler: &NodeHandler<Signals>, config: &mut NodeConfig, endpoint
 
     forward_request(handler, config, &node_id, &endpoint);
 }
-fn handle_user_put(handler: &NodeHandler<Signals>, file: crate::common::File, config: &NodeConfig) -> io::Result<()> {
+fn handle_user_put(
+    handler: &NodeHandler<Signals>,
+    file: crate::common::File,
+    config: &mut NodeConfig,
+) -> io::Result<String> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
-
+    println!("{:?}", digested_file_name);
     if (digested_file_name > config.id && digested_file_name < successor) || config.finger_table.is_empty() {
-        return save_in_server(file, config.self_addr.port() as usize);
+        return save_in_server(file, config.self_addr.port() as usize, config);
     }
 
     let forwarding_index = binary_search(config, &digested_file_name);
@@ -241,17 +248,21 @@ fn handle_user_put(handler: &NodeHandler<Signals>, file: crate::common::File, co
 
     handler.signals().send(Signals::ForwardPut(forwarding_endpoint, file));
 
-    Ok(())
+    Ok("Forwarded request".to_string())
 }
 
-fn save_in_server(file: crate::common::File, port: usize) -> io::Result<()> {
+fn save_in_server(file: crate::common::File, port: usize, config: &mut NodeConfig) -> io::Result<(String)> {
     let crate::common::File { name, extension, data } = file;
+
+    let hashed_file_name = hex::encode(Sha256::digest(name.as_bytes().to_vec()));
+
+    trace!("hashed_file_name: {hashed_file_name}");
+
     let destination = &("server/"
         .to_string()
         .add(&port.to_string())
         .add("/")
-        .add(name.as_str())
-        .add(extension.as_str()));
+        .add(&hashed_file_name));
     let path = Path::new(destination);
 
     if let Some(parent) = path.parent() {
@@ -260,8 +271,32 @@ fn save_in_server(file: crate::common::File, port: usize) -> io::Result<()> {
 
     let mut file = File::create(destination)?;
     file.write_all(&data)?;
+    config
+        .saved_files
+        .insert(hashed_file_name.clone(), name.add(&extension));
+
     trace!("File stored successfully");
-    Ok(())
+    Ok(hashed_file_name)
+}
+
+fn handle_user_get(handler: &NodeHandler<Signals>, config: &mut NodeConfig, key: String, endpoint: Endpoint) {
+    trace!("Handling user get");
+
+    if let Ok(digested_file_name) = hex::decode(key.clone()) {
+        let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
+
+        if (digested_file_name > config.id && digested_file_name < successor) || config.finger_table.is_empty() {
+            let file_name = config.saved_files.get(&key);
+
+            if file_name.is_none() {
+                return;
+            }
+
+            trace!("{}", file_name.unwrap());
+        }
+
+        //todo forward request
+    }
 }
 
 fn insert_in_empty_table(

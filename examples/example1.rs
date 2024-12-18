@@ -1,3 +1,4 @@
+use std::io::stdin;
 use std::net::IpAddr;
 use std::thread;
 use std::thread::sleep;
@@ -5,7 +6,6 @@ use std::time::Duration;
 use tracing_subscriber::EnvFilter;
 use DHTchord::node_state::NodeState;
 use DHTchord::user::User;
-
 
 pub fn main() {
     tracing_subscriber::fmt()
@@ -62,7 +62,15 @@ pub fn main() {
                     sleep(Duration::from_secs(5));
                     let span = tracing::trace_span!("User1");
                     let (sender, receiver) = oneshot::channel();
-                    span.in_scope(|| user1.put("127.0.0.1:7777", sender, 13));
+                    span.in_scope(|| {
+                        user1.put("127.0.0.1:7777", sender);
+                        sleep(Duration::from_secs(8));
+                        let mut input = "b133a0c0e9bee3be20163d2ad31d6248db292aa6dcb1ee087a2aa50e0fc75ae2".to_string();
+
+                        let (sender, receiver) = oneshot::channel();
+                        let user1 = User::new().unwrap();
+                        user1.get("127.0.0.1:7777", sender, input);
+                    });
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
