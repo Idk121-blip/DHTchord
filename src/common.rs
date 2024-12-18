@@ -3,14 +3,16 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize)]
-pub enum ChordMessage {
+pub enum Message {
+    ChordMessage(ChordMessage),
+    UserMessage(UserMessage),
+    // Phantom(T),
+}
+
+#[derive(Serialize, Deserialize)]
+#[warn(private_interfaces)]
+pub(crate) enum ChordMessage {
     //<T>
-    RegisterServer(String, SocketAddr),
-
-    ScanningFor(SocketAddr, SocketAddr),
-
-    ServerAdded(String, SocketAddr),
-
     SendStringMessage(String, SocketAddr),
 
     AddSuccessor(SocketAddr),
@@ -21,15 +23,30 @@ pub enum ChordMessage {
 
     Message(String),
 
-    Accepted,
-
-    Rejected,
-
     ForwardedJoin(String),
+
+    ForwardedPut(String, File),
     // SendMessage(Box<Message<T>>, SocketAddr),
 }
 
+pub(crate) enum ServerMessage {
+    RequestedFile(File),
+}
 
 pub(crate) enum Signals {
-    ForwardedJoin(Endpoint)
+    ForwardMessage(Endpoint, Message),
+    ForwardPut(Endpoint, File),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum UserMessage {
+    ///Put(file bytes, file name,  extension)
+    Put(File),
+    Get(String, String),
+}
+#[derive(Serialize, Deserialize)]
+pub struct File {
+    pub name: String,
+    pub extension: String,
+    pub data: Vec<u8>,
 }
