@@ -10,7 +10,9 @@ use DHTchord::common;
 use DHTchord::node_state::NodeState;
 use DHTchord::user::User;
 
-pub fn main() {
+
+#[tokio::main]
+pub async fn main() {
     tracing_subscriber::fmt()
         .with_span_events(
             tracing_subscriber::fmt::format::FmtSpan::NEW | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
@@ -19,6 +21,10 @@ pub fn main() {
         .with_line_number(true)
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+
+    let (sender_put, receiver_put) = oneshot::channel();
+    let (sender_get, receiver_get) = oneshot::channel();
 
     thread::scope(|scope| {
         scope.spawn(|| {
@@ -58,34 +64,37 @@ pub fn main() {
                 }
             }
         });
+
         scope.spawn(|| {
-            //
             match User::new() {
                 Ok(user1) => {
                     sleep(Duration::from_secs(5));
                     let span = tracing::trace_span!("User1");
-                    let (sender, receiver) = oneshot::channel();
+
                     span.in_scope(|| {
-                        let file_name = "prova.txt";
+                        let file_name = "prova2.txt";
                         let file_path = "user/".to_string().add(file_name);
                         let file = File::open(file_path);
 
                         let mut buffer = Vec::new();
 
-                        let _ = file.unwrap().read_to_end(&mut buffer); //todo check that works fine
+                        let _ = file.unwrap().read_to_end(&mut buffer);
 
                         let file = common::File {
                             name: file_name.to_string(),
                             buffer,
                         };
 
-                        user1.put("127.0.0.1:7777", sender, file);
-                        sleep(Duration::from_secs(5));
-                        let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
+                        user1.put("127.0.0.1:7777", sender_put, file);
 
-                        let (sender, receiver) = oneshot::channel();
+
+                        sleep(Duration::from_secs(5));
+                        let input = "40349fd88d569be9df07ba058041ae1002aad93f0a967c78d26e66643f6e062b".to_string();
+
+
                         let user1 = User::new().unwrap();
-                        user1.get("127.0.0.1:7777", sender, input);
+
+                        user1.get("127.0.0.1:7777", sender_get, input);
                     });
                 }
                 Err(error) => {
@@ -94,4 +103,8 @@ pub fn main() {
             }
         });
     });
+
+    println!("{:?}", receiver_put.await.unwrap());
+
+    println!("{}", receiver_get.await.unwrap().unwrap().name);
 }

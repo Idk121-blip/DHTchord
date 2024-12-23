@@ -3,7 +3,10 @@ use std::result;
 
 #[non_exhaustive]
 #[derive(Clone, Debug)]
-pub enum ErrorKind {}
+pub enum ErrorKind {
+    ForwardingRequest(String),
+    ErrorStoringFile,
+}
 
 pub struct Error(Box<ErrorKind>);
 

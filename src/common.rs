@@ -30,10 +30,13 @@ pub(crate) enum ChordMessage {
 #[derive(Serialize, Deserialize)]
 pub(crate) enum ServerToUserMessage {
     RequestedFile(File),
+    SavedKey(String),
+    ForwarderTo(String),
 }
 
 pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
+    SendMessageToUser(Endpoint, ServerToUserMessage),
     ForwardPut(Endpoint, File),
 }
 
