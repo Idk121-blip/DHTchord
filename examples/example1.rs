@@ -1,4 +1,3 @@
-use std::io::stdin;
 use std::net::IpAddr;
 use std::thread;
 use std::thread::sleep;

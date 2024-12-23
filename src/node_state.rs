@@ -1,11 +1,12 @@
+use crate::common;
 use crate::common::ChordMessage::{self};
-use crate::common::{Message, Signals, UserMessage};
+use crate::common::{Message, ServerSignals, ServerToUserMessage, UserMessage};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Add;
 use std::path::Path;
@@ -15,8 +16,8 @@ use std::{fs, io};
 use tracing::{info, trace};
 
 pub struct NodeState {
-    handler: NodeHandler<Signals>,
-    listener: NodeListener<Signals>,
+    handler: NodeHandler<ServerSignals>,
+    listener: NodeListener<ServerSignals>,
     config: NodeConfig,
 }
 
@@ -118,18 +119,20 @@ impl NodeState {
                 }
             }
             NodeEvent::Signal(signal) => match signal {
-                Signals::ForwardMessage(endpoint, message) => {
+                ServerSignals::ForwardMessage(endpoint, message) => {
                     trace!("Starting Forwarded Join");
                     let output_data = bincode::serialize(&message).unwrap();
                     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         trace!("Waiting for response");
                     }
                 }
-                Signals::ForwardPut(endpoint, file) => {
+                ServerSignals::ForwardPut(endpoint, file) => {
                     trace!("Forwarding put");
+                    sleep(Duration::from_secs(1));
                     let output_data = bincode::serialize(&Message::UserMessage(UserMessage::Put(file))).unwrap();
                     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
                         trace!("Waiting for response");
+                        sleep(Duration::from_secs(1));
                     }
                 }
             },
@@ -137,7 +140,7 @@ impl NodeState {
     }
 }
 fn handle_server_message(
-    handler: &NodeHandler<Signals>,
+    handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     endpoint: Endpoint,
     message: ChordMessage,
@@ -169,7 +172,7 @@ fn handle_server_message(
 
             let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
-            handler.signals().send(Signals::ForwardMessage(new_endpoint, message));
+            handler.signals().send(ServerSignals::ForwardMessage(new_endpoint, message));
         }
         ChordMessage::ForwardedPut(addr, file) => {
             trace!("Forwarded put");
@@ -180,7 +183,7 @@ fn handle_server_message(
 }
 
 fn handle_user_message(
-    handler: &NodeHandler<Signals>,
+    handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     endpoint: Endpoint,
     message: UserMessage,
@@ -198,7 +201,7 @@ fn handle_user_message(
     }
 }
 
-fn handle_join(handler: &NodeHandler<Signals>, config: &mut NodeConfig, endpoint: Endpoint, addr: SocketAddr) {
+fn handle_join(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, endpoint: Endpoint, addr: SocketAddr) {
     trace!("entering join process");
     let node_id = Sha256::digest(addr.to_string().as_bytes()).to_vec();
 
@@ -229,40 +232,48 @@ fn handle_join(handler: &NodeHandler<Signals>, config: &mut NodeConfig, endpoint
     forward_request(handler, config, &node_id, &endpoint);
 }
 fn handle_user_put(
-    handler: &NodeHandler<Signals>,
-    file: crate::common::File,
+    handler: &NodeHandler<ServerSignals>,
+    file: common::File,
     config: &mut NodeConfig,
 ) -> io::Result<String> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
-    println!("{:?}", digested_file_name);
-    if (digested_file_name > config.id && digested_file_name < successor) || config.finger_table.is_empty() {
+
+    trace!("{}", digested_file_name > config.id);
+    trace!("{}", digested_file_name < successor);
+    trace!("{}", config.id > successor);
+
+
+    if (digested_file_name > config.id && (digested_file_name < successor || config.id > successor)) || config.finger_table.is_empty() {
         return save_in_server(file, config.self_addr.port() as usize, config);
     }
 
     let forwarding_index = binary_search(config, &digested_file_name);
 
+    trace!("{}", config.finger_table[forwarding_index].to_string());
+
     let (forwarding_endpoint, _) = handler
         .network()
         .connect(Transport::Ws, config.finger_table[forwarding_index])?;
 
-    handler.signals().send(Signals::ForwardPut(forwarding_endpoint, file));
+
+    handler.signals().send(ServerSignals::ForwardPut(forwarding_endpoint, file));
 
     Ok("Forwarded request".to_string())
 }
 
-fn save_in_server(file: crate::common::File, port: usize, config: &mut NodeConfig) -> io::Result<(String)> {
-    let crate::common::File { name, extension, data } = file;
+fn save_in_server(file: common::File, port: usize, config: &mut NodeConfig) -> io::Result<(String)> {
+    let common::File { name, buffer: data } = file;
 
-    let hashed_file_name = hex::encode(Sha256::digest(name.as_bytes().to_vec()));
+    let digested_hex_file_name = hex::encode(Sha256::digest(name.as_bytes().to_vec()));
 
-    trace!("hashed_file_name: {hashed_file_name}");
+    trace!("hashed_file_name: {digested_hex_file_name}");
 
     let destination = &("server/"
         .to_string()
         .add(&port.to_string())
         .add("/")
-        .add(&hashed_file_name));
+        .add(&digested_hex_file_name));
     let path = Path::new(destination);
 
     if let Some(parent) = path.parent() {
@@ -273,13 +284,13 @@ fn save_in_server(file: crate::common::File, port: usize, config: &mut NodeConfi
     file.write_all(&data)?;
     config
         .saved_files
-        .insert(hashed_file_name.clone(), name.add(&extension));
+        .insert(digested_hex_file_name.clone(), name);
 
     trace!("File stored successfully");
-    Ok(hashed_file_name)
+    Ok(digested_hex_file_name)
 }
 
-fn handle_user_get(handler: &NodeHandler<Signals>, config: &mut NodeConfig, key: String, endpoint: Endpoint) {
+fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, key: String, endpoint: Endpoint) {
     trace!("Handling user get");
 
     if let Ok(digested_file_name) = hex::decode(key.clone()) {
@@ -289,18 +300,38 @@ fn handle_user_get(handler: &NodeHandler<Signals>, config: &mut NodeConfig, key:
             let file_name = config.saved_files.get(&key);
 
             if file_name.is_none() {
+                trace!("No such a file");
                 return;
             }
 
+
+            let file_path = "server/"
+                .to_string()
+                .add(&config.self_addr.port().to_string())
+                .add("/")
+                .add(&hex::encode(digested_file_name));
+
+            let file = File::open(file_path);
+
+            let mut buffer = Vec::new();
+
+            let _ = file.unwrap().read_to_end(&mut buffer); //todo check that works fine
+
+            let file = common::File {
+                name: file_name.unwrap().to_string(),
+                buffer,
+            };
+
+            handler.network().send(endpoint, &bincode::serialize(&ServerToUserMessage::RequestedFile(file)).unwrap());
+
+
             trace!("{}", file_name.unwrap());
         }
-
-        //todo forward request
     }
 }
 
 fn insert_in_empty_table(
-    handler: &NodeHandler<Signals>,
+    handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     endpoint: &Endpoint,
     addr: &SocketAddr,
@@ -321,7 +352,7 @@ fn insert_in_empty_table(
 }
 
 fn insert_between_self_and_predecessor(
-    handler: &NodeHandler<Signals>,
+    handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     endpoint: &Endpoint,
     addr: &SocketAddr,
@@ -338,7 +369,7 @@ fn insert_between_self_and_predecessor(
 }
 
 fn insert_between_self_and_successor(
-    handler: &NodeHandler<Signals>,
+    handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     endpoint: &Endpoint,
     addr: &SocketAddr,
@@ -355,7 +386,7 @@ fn insert_between_self_and_successor(
     trace!("join successfully");
 }
 
-fn forward_request(handler: &NodeHandler<Signals>, config: &NodeConfig, node_id: &Vec<u8>, endpoint: &Endpoint) {
+fn forward_request(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, node_id: &Vec<u8>, endpoint: &Endpoint) {
     let forward_position = binary_search(config, node_id);
     let message = Message::ChordMessage(ChordMessage::ForwardedJoin(
         config.finger_table[forward_position].to_string(),

@@ -6,13 +6,11 @@ use std::net::SocketAddr;
 pub enum Message {
     ChordMessage(ChordMessage),
     UserMessage(UserMessage),
-    // Phantom(T),
 }
 
 #[derive(Serialize, Deserialize)]
 #[warn(private_interfaces)]
 pub(crate) enum ChordMessage {
-    //<T>
     SendStringMessage(String, SocketAddr),
 
     AddSuccessor(SocketAddr),
@@ -29,11 +27,12 @@ pub(crate) enum ChordMessage {
     // SendMessage(Box<Message<T>>, SocketAddr),
 }
 
-pub(crate) enum ServerMessage {
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ServerToUserMessage {
     RequestedFile(File),
 }
 
-pub(crate) enum Signals {
+pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     ForwardPut(Endpoint, File),
 }
@@ -47,6 +46,5 @@ pub enum UserMessage {
 #[derive(Serialize, Deserialize)]
 pub struct File {
     pub name: String,
-    pub extension: String,
-    pub data: Vec<u8>,
+    pub buffer: Vec<u8>,
 }

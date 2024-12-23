@@ -1,5 +1,5 @@
 use crate::common::UserMessage::{Get, Put};
-use crate::common::{File, Message};
+use crate::common::{File, Message, ServerToUserMessage};
 use message_io::network::{NetEvent, Transport};
 use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
@@ -29,11 +29,10 @@ impl User {
         self.handler.network().send(
             ep,
             &bincode::serialize(&Message::UserMessage(Put(File {
-                name: "ciao".to_owned(),
-                extension: ".txt".to_owned(),
-                data: Vec::new(),
+                name: "ciao.txt".to_owned(),
+                buffer: Vec::new(),
             })))
-            .unwrap(),
+                .unwrap(),
         );
 
         // self.listener.for_each(move |event| match event.network() {
@@ -64,7 +63,7 @@ impl User {
             NetEvent::Message(endpoint, bytes) => {
                 trace!("response from server, killing myself");
                 // processor.sender_option.unwrap().send("message received".to_string());
-
+                let message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
                 self.handler.stop();
             }
             NetEvent::Disconnected(_) => {}
