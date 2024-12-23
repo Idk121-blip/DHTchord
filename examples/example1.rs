@@ -1,8 +1,12 @@
+use std::fs::File;
+use std::io::Read;
 use std::net::IpAddr;
+use std::ops::Add;
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use tracing_subscriber::EnvFilter;
+use DHTchord::common;
 use DHTchord::node_state::NodeState;
 use DHTchord::user::User;
 
@@ -62,9 +66,22 @@ pub fn main() {
                     let span = tracing::trace_span!("User1");
                     let (sender, receiver) = oneshot::channel();
                     span.in_scope(|| {
-                        user1.put("127.0.0.1:7777", sender);
-                        sleep(Duration::from_secs(8));
-                        let mut input = "b133a0c0e9bee3be20163d2ad31d6248db292aa6dcb1ee087a2aa50e0fc75ae2".to_string();
+                        let file_name = "prova.txt";
+                        let file_path = "user/".to_string().add(file_name);
+                        let file = File::open(file_path);
+
+                        let mut buffer = Vec::new();
+
+                        let _ = file.unwrap().read_to_end(&mut buffer); //todo check that works fine
+
+                        let file = common::File {
+                            name: file_name.to_string(),
+                            buffer,
+                        };
+
+                        user1.put("127.0.0.1:7777", sender, file);
+                        sleep(Duration::from_secs(5));
+                        let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
 
                         let (sender, receiver) = oneshot::channel();
                         let user1 = User::new().unwrap();

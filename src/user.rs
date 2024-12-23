@@ -20,20 +20,15 @@ impl User {
         Ok(Self { handler, listener })
     }
 
-    pub fn put(self, server_address: &str, sender: Sender<String>) {
+    pub fn put(self, server_address: &str, sender: Sender<String>, file: File) {
         let (ep, _) = self
             .handler
             .network()
             .connect_sync(Transport::Ws, server_address)
             .unwrap();
-        self.handler.network().send(
-            ep,
-            &bincode::serialize(&Message::UserMessage(Put(File {
-                name: "ciao.txt".to_owned(),
-                buffer: Vec::new(),
-            })))
-                .unwrap(),
-        );
+        self.handler
+            .network()
+            .send(ep, &bincode::serialize(&Message::UserMessage(Put(file))).unwrap());
 
         // self.listener.for_each(move |event| match event.network() {
         //     NetEvent::Connected(_, _) => {}

@@ -172,7 +172,9 @@ fn handle_server_message(
 
             let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
-            handler.signals().send(ServerSignals::ForwardMessage(new_endpoint, message));
+            handler
+                .signals()
+                .send(ServerSignals::ForwardMessage(new_endpoint, message));
         }
         ChordMessage::ForwardedPut(addr, file) => {
             trace!("Forwarded put");
@@ -243,8 +245,10 @@ fn handle_user_put(
     trace!("{}", digested_file_name < successor);
     trace!("{}", config.id > successor);
 
-
-    if (digested_file_name > config.id && (digested_file_name < successor || config.id > successor)) || config.finger_table.is_empty() {
+    if (digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+        || config.id > successor && digested_file_name < successor
+        || config.finger_table.is_empty()
+    {
         return save_in_server(file, config.self_addr.port() as usize, config);
     }
 
@@ -256,8 +260,9 @@ fn handle_user_put(
         .network()
         .connect(Transport::Ws, config.finger_table[forwarding_index])?;
 
-
-    handler.signals().send(ServerSignals::ForwardPut(forwarding_endpoint, file));
+    handler
+        .signals()
+        .send(ServerSignals::ForwardPut(forwarding_endpoint, file));
 
     Ok("Forwarded request".to_string())
 }
@@ -282,9 +287,7 @@ fn save_in_server(file: common::File, port: usize, config: &mut NodeConfig) -> i
 
     let mut file = File::create(destination)?;
     file.write_all(&data)?;
-    config
-        .saved_files
-        .insert(digested_hex_file_name.clone(), name);
+    config.saved_files.insert(digested_hex_file_name.clone(), name);
 
     trace!("File stored successfully");
     Ok(digested_hex_file_name)
@@ -296,14 +299,16 @@ fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig
     if let Ok(digested_file_name) = hex::decode(key.clone()) {
         let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-        if (digested_file_name > config.id && digested_file_name < successor) || config.finger_table.is_empty() {
+        if (digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+            || config.id > successor && digested_file_name < successor
+            || config.finger_table.is_empty()
+        {
             let file_name = config.saved_files.get(&key);
 
             if file_name.is_none() {
                 trace!("No such a file");
                 return;
             }
-
 
             let file_path = "server/"
                 .to_string()
@@ -322,8 +327,10 @@ fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig
                 buffer,
             };
 
-            handler.network().send(endpoint, &bincode::serialize(&ServerToUserMessage::RequestedFile(file)).unwrap());
-
+            handler.network().send(
+                endpoint,
+                &bincode::serialize(&ServerToUserMessage::RequestedFile(file)).unwrap(),
+            );
 
             trace!("{}", file_name.unwrap());
         }
