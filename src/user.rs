@@ -6,33 +6,38 @@ use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
 use std::sync::{Arc, Mutex};
-use tracing::trace;
+use tracing::{info, trace};
 
 pub struct User {
     handler: NodeHandler<()>,
     listener: NodeListener<()>,
+    listening_addr: String,
 }
 
 impl User {
     pub fn new() -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
-        let (_id, listen_address) = handler.network().listen(Transport::Ws, "0.0.0.0:0")?;
-        trace!("{listen_address}");
-        Ok(Self { handler, listener })
+        let (_id, listen_socket) = handler.network().listen(Transport::Ws, "127.0.0.1:8700")?;
+        println!("{listen_socket}");
+        let listening_addr = "127.0.0.1:8700".to_string();
+        Ok(Self {
+            handler,
+            listener,
+            listening_addr,
+        })
     }
 
     pub fn put(self, server_address: &str, sender: Sender<Result<String, ()>>, file: File) {
         let Self {
             handler,
             listener,
+            listening_addr,
         } = self;
-        let (ep, _) = handler
-            .network()
-            .connect_sync(Transport::Ws, server_address)
-            .unwrap();
-        handler
-            .network()
-            .send(ep, &bincode::serialize(&Message::UserMessage(Put(file))).unwrap());
+        let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
+        handler.network().send(
+            ep,
+            &bincode::serialize(&Message::UserMessage(Put(file, listening_addr))).unwrap(),
+        );
 
         let response = Arc::new(Mutex::new(Err(())));
 
@@ -42,14 +47,15 @@ impl User {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
-                trace!("response from server, killing myself");
                 let server_to_user_message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
                 match server_to_user_message {
                     ServerToUserMessage::SavedKey(key) => {
+                        trace!("Ok response from server, killing myself");
                         *response_clone.lock().unwrap() = Ok(key);
                         handler.stop();
                     }
                     ServerToUserMessage::ForwarderTo(_) => {
+                        trace!("forwarder");
                         //todo extend eventually a timer of the request
                     }
                     _ => {}
@@ -65,11 +71,9 @@ impl User {
         let Self {
             handler,
             listener,
+            listening_addr,
         } = self;
-        let (ep, _) = handler
-            .network()
-            .connect_sync(Transport::Ws, server_address)
-            .unwrap();
+        let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
         handler
             .network()
             .send(ep, &bincode::serialize(&Message::UserMessage(Get(key))).unwrap());
@@ -93,7 +97,6 @@ impl User {
             }
             NetEvent::Disconnected(_) => {}
         });
-
 
         let final_response = response.lock().unwrap().take();
         sender.send(final_response).unwrap();

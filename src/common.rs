@@ -37,13 +37,13 @@ pub(crate) enum ServerToUserMessage {
 pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     SendMessageToUser(Endpoint, ServerToUserMessage),
-    ForwardPut(Endpoint, File),
+    ForwardPut(Endpoint, String, File),
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum UserMessage {
     ///Put(file bytes, file name,  extension)
-    Put(File),
+    Put(File, String),
     Get(String),
 }
 #[derive(Serialize, Deserialize)]

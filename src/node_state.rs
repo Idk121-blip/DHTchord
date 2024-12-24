@@ -129,9 +129,13 @@ impl NodeState {
                     trace!("Forwarding message to user");
                     forward_message(&handler, endpoint, message);
                 }
-                ServerSignals::ForwardPut(endpoint, file) => {
+                ServerSignals::ForwardPut(endpoint, addr, file) => {
                     trace!("Forwarding put");
-                    forward_message(&handler, endpoint, Message::ChordMessage(ChordMessage::ForwardedPut(endpoint.addr().to_string(), file)));
+                    forward_message(
+                        &handler,
+                        endpoint,
+                        Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
+                    );
                 }
             },
         });
@@ -140,8 +144,10 @@ impl NodeState {
 
 fn forward_message(handler: &NodeHandler<ServerSignals>, endpoint: Endpoint, message: impl Serialize) {
     let output_data = bincode::serialize(&message).unwrap();
+    trace!("{}", endpoint.addr());
     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
         trace!("Waiting for response");
+        // sleep(Duration::from_secs(1));
     }
 }
 
@@ -185,22 +191,25 @@ fn handle_server_message(
         ChordMessage::ForwardedPut(addr, file) => {
             trace!("Forwarded put");
 
-            match handle_user_put(handler, file, config) {
+            match handle_user_put(handler, file, config, addr.clone()) {
                 Ok(saved_key) => {
-                    trace!("{addr}");
+                    trace!("Here something is broken---------------------");
                     let (ep, _) = handler.network().connect(Transport::Ws, addr).unwrap();
-                    //sleep(Duration::from_secs(1));
-                    //handler.signals().send(ServerSignals::SendMessageToUser(ep, ServerToUserMessage::SavedKey(saved_key)));
+                    handler.signals().send(ServerSignals::SendMessageToUser(
+                        ep,
+                        ServerToUserMessage::SavedKey(saved_key),
+                    ));
                 }
-                Err(e) => {
-                    match e {
-                        ErrorKind::ForwardingRequest(forwarding_address) => {
-                            let (ep, _) = handler.network().connect(Transport::Ws, addr).unwrap();
-                            handler.signals().send(ServerSignals::SendMessageToUser(ep, ServerToUserMessage::ForwarderTo(forwarding_address)));
-                        }
-                        ErrorKind::ErrorStoringFile => {}
+                Err(e) => match e {
+                    ErrorKind::ForwardingRequest(forwarding_address) => {
+                        let (ep, _) = handler.network().connect(Transport::Ws, addr).unwrap();
+                        handler.signals().send(ServerSignals::SendMessageToUser(
+                            ep,
+                            ServerToUserMessage::ForwarderTo(forwarding_address),
+                        ));
                     }
-                }
+                    ErrorKind::ErrorStoringFile => {}
+                },
             }
         }
     }
@@ -213,22 +222,26 @@ fn handle_user_message(
     message: UserMessage,
 ) {
     match message {
-        UserMessage::Put(file) => {
+        UserMessage::Put(file, user_addr) => {
             trace!("Received file");
-            match handle_user_put(handler, file, config) {
+            match handle_user_put(handler, file, config, user_addr) {
                 Ok(saved_key) => {
-                    handler.network().send(endpoint, &bincode::serialize(&ServerToUserMessage::SavedKey(saved_key)).unwrap());
+                    handler.network().send(
+                        endpoint,
+                        &bincode::serialize(&ServerToUserMessage::SavedKey(saved_key)).unwrap(),
+                    );
                 }
-                Err(error) => {
-                    match error {
-                        ErrorKind::ForwardingRequest(address) => {
-                            handler.network().send(endpoint, &bincode::serialize(&ServerToUserMessage::ForwarderTo(address)).unwrap());
-                        }
-                        ErrorKind::ErrorStoringFile => {
-                            trace!("problem occurred while saving file");
-                        }
+                Err(error) => match error {
+                    ErrorKind::ForwardingRequest(address) => {
+                        handler.network().send(
+                            endpoint,
+                            &bincode::serialize(&ServerToUserMessage::ForwarderTo(address)).unwrap(),
+                        );
                     }
-                }
+                    ErrorKind::ErrorStoringFile => {
+                        trace!("problem occurred while saving file");
+                    }
+                },
             }
         }
         UserMessage::Get(key) => {
@@ -271,6 +284,7 @@ fn handle_user_put(
     handler: &NodeHandler<ServerSignals>,
     file: common::File,
     config: &mut NodeConfig,
+    addr: String,
 ) -> Result<String, ErrorKind> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
@@ -279,20 +293,24 @@ fn handle_user_put(
         || config.id > successor && digested_file_name < successor
         || config.finger_table.is_empty()
     {
-        return save_in_server(file, config.self_addr.port() as usize, config).map_or(Err(ErrorKind::ErrorStoringFile), Ok);
+        return save_in_server(file, config.self_addr.port() as usize, config)
+            .map_or(Err(ErrorKind::ErrorStoringFile), Ok);
     }
 
     let forwarding_index = binary_search(config, &digested_file_name);
 
     let (forwarding_endpoint, _) = handler
         .network()
-        .connect(Transport::Ws, config.finger_table[forwarding_index]).unwrap();
+        .connect(Transport::Ws, config.finger_table[forwarding_index])
+        .unwrap();
 
     handler
         .signals()
-        .send(ServerSignals::ForwardPut(forwarding_endpoint, file));
+        .send(ServerSignals::ForwardPut(forwarding_endpoint, addr, file));
 
-    Err(ErrorKind::ForwardingRequest(config.finger_table[forwarding_index].to_string()))
+    Err(ErrorKind::ForwardingRequest(
+        config.finger_table[forwarding_index].to_string(),
+    ))
 }
 
 fn save_in_server(file: common::File, port: usize, config: &mut NodeConfig) -> io::Result<String> {
