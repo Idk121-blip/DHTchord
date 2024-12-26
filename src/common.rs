@@ -24,7 +24,8 @@ pub(crate) enum ChordMessage {
     ForwardedJoin(String),
 
     ForwardedPut(String, File),
-    // SendMessage(Box<Message<T>>, SocketAddr),
+    
+    ForwardedGet(String, String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -38,13 +39,15 @@ pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     SendMessageToUser(Endpoint, ServerToUserMessage),
     ForwardPut(Endpoint, String, File),
+    ForwardGet(Endpoint, String, String),
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum UserMessage {
-    ///Put(file bytes, file name,  extension)
+    ///Put(file_to_save, self_address)
     Put(File, String),
-    Get(String),
+    ///Get(key, self_address)
+    Get(String, String),
 }
 #[derive(Serialize, Deserialize)]
 pub struct File {
