@@ -3,13 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
 #[derive(Serialize, Deserialize)]
-pub enum Message {
+pub(crate) enum Message {
     ChordMessage(ChordMessage),
     UserMessage(UserMessage),
 }
 
 #[derive(Serialize, Deserialize)]
-#[warn(private_interfaces)]
 pub(crate) enum ChordMessage {
     SendStringMessage(String, SocketAddr),
 
@@ -24,7 +23,7 @@ pub(crate) enum ChordMessage {
     ForwardedJoin(String),
 
     ForwardedPut(String, File),
-    
+
     ForwardedGet(String, String),
 }
 
@@ -33,17 +32,20 @@ pub(crate) enum ServerToUserMessage {
     RequestedFile(File),
     SavedKey(String),
     ForwarderTo(String),
+    FileNotFound(String),
+    HexConversionNotValid(String),
+    InternalServerError,
 }
 
 pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     SendMessageToUser(Endpoint, ServerToUserMessage),
-    ForwardPut(Endpoint, String, File),
+    ForwardPut(Endpoint, File, String),
     ForwardGet(Endpoint, String, String),
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum UserMessage {
+pub(crate) enum UserMessage {
     ///Put(file_to_save, self_address)
     Put(File, String),
     ///Get(key, self_address)

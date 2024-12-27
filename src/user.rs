@@ -6,7 +6,7 @@ use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
 use std::sync::{Arc, Mutex};
-use tracing::{info, trace};
+use tracing::trace;
 
 pub struct User {
     handler: NodeHandler<()>,
@@ -76,7 +76,7 @@ impl User {
         let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
         handler
             .network()
-            .send(ep, &bincode::serialize(&Message::UserMessage(Get(key))).unwrap());
+            .send(ep, &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap());
 
         let response = Arc::new(Mutex::new(None));
 

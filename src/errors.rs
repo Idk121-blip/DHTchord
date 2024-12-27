@@ -13,6 +13,7 @@ pub enum GetError {
     ForwardingRequest(String),
     ErrorRetrievingFile,
     NotFound,
+    HexConversion,
 }
 
 

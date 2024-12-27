@@ -4,11 +4,11 @@ use crate::common::{Message, ServerSignals, ServerToUserMessage, UserMessage};
 use crate::errors::{GetError, PutError};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Error, Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Add;
 use std::path::Path;
@@ -129,7 +129,7 @@ impl NodeState {
                     trace!("Forwarding message to user");
                     forward_message(&handler, endpoint, message);
                 }
-                ServerSignals::ForwardPut(endpoint, addr, file) => {
+                ServerSignals::ForwardPut(endpoint, file, addr) => {
                     trace!("Forwarding put");
                     forward_message(
                         &handler,
@@ -249,8 +249,34 @@ fn handle_server_message(
     }
 }
 
-fn handle_forwarded_get(node_handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: String, key: String) {
-    match handle_user_get() {}
+fn handle_forwarded_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: String, key: String) {
+    let (endpoint, _) = handler.network().connect(Transport::Ws, &addr).unwrap();
+    let message = get_from_key(handler, config, addr, key);
+    forward_message(handler, endpoint, message);
+}
+
+fn get_from_key(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: String, key: String) -> ServerToUserMessage {
+    match handle_user_get(handler, config, addr, key.clone()) {
+        Ok(file) => {
+            ServerToUserMessage::RequestedFile(file)
+        }
+        Err(e) => {
+            match e {
+                GetError::ForwardingRequest(addr) => {
+                    ServerToUserMessage::ForwarderTo(addr)
+                }
+                GetError::ErrorRetrievingFile => {
+                    ServerToUserMessage::InternalServerError
+                }
+                GetError::NotFound => {
+                    ServerToUserMessage::FileNotFound(key)
+                }
+                GetError::HexConversion => {
+                    ServerToUserMessage::HexConversionNotValid(key)
+                }
+            }
+        }
+    }
 }
 
 fn handle_forwarded_put(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: String, file: common::File) {
@@ -305,8 +331,9 @@ fn handle_user_message(
                 },
             }
         }
-        UserMessage::Get(key, addr) => {
-            handle_user_get(handler, config, key, endpoint, addr);
+        UserMessage::Get(key, user_addr) => {
+            let send_message = get_from_key(handler, config, user_addr, key);
+            handler.network().send(endpoint, &bincode::serialize(&send_message).unwrap());
         }
     }
 }
@@ -367,7 +394,7 @@ fn handle_user_put(
 
     handler
         .signals()
-        .send(ServerSignals::ForwardPut(forwarding_endpoint, addr, file));
+        .send(ServerSignals::ForwardPut(forwarding_endpoint, file, addr));
 
     Err(PutError::ForwardingRequest(
         config.finger_table[forwarding_index].to_string(),
@@ -435,7 +462,7 @@ fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, ke
             };
 
 
-            trace!("{}", file_name.unwrap());
+            trace!("returning {}", file_name.unwrap());
             return Ok(file);
         }
         let forwarding_index = binary_search(config, &digested_file_name);
@@ -448,10 +475,12 @@ fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, ke
             .signals()
             .send(ServerSignals::ForwardGet(forwarding_endpoint, key, addr));
 
-        Err(PutError::ForwardingRequest(
+        return Err(GetError::ForwardingRequest(
             config.finger_table[forwarding_index].to_string(),
-        ))
+        ));
     }
+
+    Err(GetError::HexConversion)
 }
 
 fn insert_in_empty_table(
@@ -460,7 +489,6 @@ fn insert_in_empty_table(
     endpoint: &Endpoint,
     addr: &SocketAddr,
 ) {
-    trace!("{}: request from ip: {endpoint} joining: {addr}", config.self_addr);
     config.predecessor = Some(*addr);
     config.finger_table.push(*addr);
 
@@ -471,7 +499,6 @@ fn insert_in_empty_table(
     let message = Message::ChordMessage(ChordMessage::AddPredecessor(config.self_addr));
     let serialized = bincode::serialize(&message).unwrap();
     handler.network().send(*endpoint, &serialized);
-    trace!("{:?}", config.finger_table);
     trace!("join successfully");
 }
 
@@ -488,7 +515,6 @@ fn insert_between_self_and_predecessor(
     let serialized = bincode::serialize(&add_predecessor_message).unwrap();
     handler.network().send(*endpoint, &serialized);
     config.predecessor = Some(*addr);
-    trace!("{:?}", config.finger_table);
     trace!("join successfully");
 }
 
@@ -506,7 +532,6 @@ fn insert_between_self_and_successor(
     let serialized = bincode::serialize(&add_successor_message).unwrap();
     handler.network().send(*endpoint, &serialized);
     config.finger_table.insert(0, *addr);
-    trace!("{:?}", config.finger_table);
     trace!("join successfully");
 }
 
@@ -542,9 +567,5 @@ fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> usize {
 
     e
 
-    // node_handler.network().remove(endpoint2.resource_id());
-    // node_handler.network().remove(endpoint.resource_id());
-
     //todo Check if it's closer this one or the one that is predecessor
-    // NB: it won't be unless mid = e at the end (CREDO)
 }
