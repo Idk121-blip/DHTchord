@@ -40,8 +40,6 @@ pub(crate) enum ServerToUserMessage {
 pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     SendMessageToUser(Endpoint, ServerToUserMessage),
-    ForwardPut(Endpoint, File, String),
-    ForwardGet(Endpoint, String, String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,7 +49,7 @@ pub(crate) enum UserMessage {
     ///Get(key, self_address)
     Get(String, String),
 }
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct File {
     pub name: String,
     pub buffer: Vec<u8>,

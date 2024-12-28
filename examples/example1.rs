@@ -24,7 +24,15 @@ pub async fn main() {
 
 
     let (sender_put, receiver_put) = oneshot::channel();
-    let (sender_get, receiver_get) = oneshot::channel();
+    let (sender_get, receiver_get) = oneshot::channel::<Result<common::File, ()>>();
+
+
+    tokio::spawn(async move {
+        println!("{:?}", receiver_put.await.unwrap());
+
+        println!("{:?}", receiver_get.await.unwrap());
+    });
+
 
     thread::scope(|scope| {
         scope.spawn(|| {
@@ -66,7 +74,7 @@ pub async fn main() {
         });
 
         scope.spawn(|| {
-            match User::new() {
+            match User::new("127.0.0.1".to_string(), "8700".to_string()) {
                 Ok(user1) => {
                     sleep(Duration::from_secs(5));
                     let span = tracing::trace_span!("User1");
@@ -86,15 +94,22 @@ pub async fn main() {
                         };
 
                         user1.put("127.0.0.1:7777", sender_put, file);
+                    });
+                }
+                Err(error) => {
+                    eprintln!("{:?}", error)
+                }
+            }
+        });
 
-
-                        sleep(Duration::from_secs(5));
-                        let input = "40349fd88d569be9df07ba058041ae1002aad93f0a967c78d26e66643f6e062b".to_string();
-
-
-                        let user1 = User::new().unwrap();
-
-                        user1.get("127.0.0.1:7777", sender_get, input);
+        scope.spawn(|| {
+            match User::new("127.0.0.1".to_string(), "8800".to_string()) {
+                Ok(user2) => {
+                    let span = tracing::trace_span!("User2");
+                    span.in_scope(|| {
+                        sleep(Duration::from_secs(10));
+                        let input = "1b327397fa3ad27b485c62ebf16149c57371b30e31c052d23bd2fb576c9509e2".to_string();
+                        user2.get("127.0.0.1:7777", sender_get, input);
                     });
                 }
                 Err(error) => {
@@ -103,8 +118,4 @@ pub async fn main() {
             }
         });
     });
-
-    println!("{:?}", receiver_put.await.unwrap());
-
-    println!("{}", receiver_get.await.unwrap().unwrap().name);
 }

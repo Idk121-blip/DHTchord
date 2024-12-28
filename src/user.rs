@@ -5,6 +5,7 @@ use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 
@@ -15,11 +16,11 @@ pub struct User {
 }
 
 impl User {
-    pub fn new() -> Result<Self, io::Error> {
+    pub fn new(ip_addr: String, port: String) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
-        let (_id, listen_socket) = handler.network().listen(Transport::Ws, "127.0.0.1:8700")?;
-        println!("{listen_socket}");
-        let listening_addr = "127.0.0.1:8700".to_string();
+        let (_id, listen_socket) = handler.network().listen(Transport::Ws, ip_addr + ":" + &port)?;
+        let listening_addr = listen_socket.to_string();
+        println!("{listening_addr}");
         Ok(Self {
             handler,
             listener,
@@ -58,7 +59,14 @@ impl User {
                         trace!("forwarder");
                         //todo extend eventually a timer of the request
                     }
-                    _ => {}
+                    ServerToUserMessage::InternalServerError => {
+                        trace!("Error returned from serve");
+                        *response_clone.lock().unwrap() = Err(());
+                        handler.stop();
+                    }
+                    _ => {
+                        trace!("Shouldn't arrive here");
+                    }
                 }
             }
             NetEvent::Disconnected(_) => {}
@@ -67,18 +75,18 @@ impl User {
         sender.send(final_response).unwrap();
     }
 
-    pub fn get(self, server_address: &str, sender: Sender<Option<File>>, key: String) {
+    pub fn get(self, server_address: &str, sender: Sender<Result<File, ()>>, key: String) {
         let Self {
             handler,
             listener,
             listening_addr,
         } = self;
         let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
-        handler
-            .network()
-            .send(ep, &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap());
+        handler.network().send(
+            ep,
+            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap());
 
-        let response = Arc::new(Mutex::new(None));
+        let response = Arc::new(Mutex::new(Err(())));
 
         let response_clone = Arc::clone(&response);
 
@@ -86,19 +94,41 @@ impl User {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
-                trace!("response from server, killing myself");
                 // processor.sender_option.unwrap().send("message received".to_string());
                 let server_to_user_message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
-                if let ServerToUserMessage::RequestedFile(file) = server_to_user_message {
-                    trace!("Server message");
-                    *response_clone.lock().unwrap() = Some(file);
+
+                match server_to_user_message {
+                    ServerToUserMessage::RequestedFile(file) => {
+                        trace!("File received");
+                        *response_clone.lock().unwrap() = Ok(file);
+                        handler.stop();
+                    }
+                    ServerToUserMessage::ForwarderTo(_) => {
+                        trace!("Forwarded")
+                    }
+                    ServerToUserMessage::FileNotFound(hex) => {
+                        trace!("Not found");
+
+                        *response_clone.lock().unwrap() = Err(());
+                        handler.stop();
+                    }
+                    ServerToUserMessage::HexConversionNotValid(_) => {
+                        trace!("hex conversion error");
+                        *response_clone.lock().unwrap() = Err(());
+                        handler.stop();
+                    }
+                    ServerToUserMessage::InternalServerError => {
+                        trace!("Internal error while saving file");
+                        *response_clone.lock().unwrap() = Err(());
+                        handler.stop();
+                    }
+                    _ => {}
                 }
-                handler.stop();
             }
             NetEvent::Disconnected(_) => {}
         });
 
-        let final_response = response.lock().unwrap().take();
+        let final_response = response.lock().unwrap().clone();
         sender.send(final_response).unwrap();
     }
 }
