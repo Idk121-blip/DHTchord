@@ -5,7 +5,6 @@ use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
-use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 
@@ -18,9 +17,9 @@ pub struct User {
 impl User {
     pub fn new(ip_addr: String, port: String) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
-        let (_id, listen_socket) = handler.network().listen(Transport::Ws, ip_addr + ":" + &port)?;
+        let (_, listen_socket) = handler.network().listen(Transport::Ws, ip_addr + ":" + &port)?;
         let listening_addr = listen_socket.to_string();
-        println!("{listening_addr}");
+
         Ok(Self {
             handler,
             listener,
@@ -106,7 +105,7 @@ impl User {
                     ServerToUserMessage::ForwarderTo(_) => {
                         trace!("Forwarded")
                     }
-                    ServerToUserMessage::FileNotFound(hex) => {
+                    ServerToUserMessage::FileNotFound(_hex) => {
                         trace!("Not found");
 
                         *response_clone.lock().unwrap() = Err(());
