@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage};
+use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
 use crate::errors::GetError;
 use crate::node_state::NodeConfig;
 use digest::Digest;
@@ -48,7 +48,7 @@ fn handle_user_get(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, ke
                 return Err(GetError::NotFound);
             }
 
-            let file_path = "server/"
+            let file_path = SERVER_FOLDER
                 .to_string()
                 .add(&config.self_addr.port().to_string())
                 .add("/")

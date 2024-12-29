@@ -5,8 +5,6 @@ use message_io::network::{Endpoint, SendStatus};
 use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::net::SocketAddr;
-use std::thread::sleep;
-use std::time::Duration;
 use tracing::trace;
 
 pub fn handle_join(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, endpoint: Endpoint, addr: SocketAddr) {
@@ -102,6 +100,5 @@ fn forward_request(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, no
 
     while handler.network().send(*endpoint, &serialized) == SendStatus::ResourceNotAvailable {
         trace!("Waiting for response...");
-        sleep(Duration::from_millis(10));
     }
 }

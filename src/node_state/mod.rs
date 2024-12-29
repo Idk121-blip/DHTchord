@@ -2,7 +2,7 @@ mod join_handler;
 mod user_message_handler;
 
 use crate::common::ChordMessage::{self};
-use crate::common::{Message, ServerSignals};
+use crate::common::{Message, ServerSignals, SERVER_FOLDER};
 use crate::node_state::join_handler::handle_join;
 use crate::node_state::user_message_handler::get_handler::handle_forwarded_get;
 use crate::node_state::user_message_handler::handle_user_message;
@@ -16,10 +16,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use std::thread::sleep;
 use std::time::Duration;
 use std::{fs, io};
-use tracing::{info, trace};
+use tracing::{error, info, trace};
+const SAVED_FILES: &str = "saved_files.txt";
 
 pub struct NodeState {
     handler: NodeHandler<ServerSignals>,
@@ -48,11 +48,21 @@ impl NodeState {
         let id = Sha256::digest(self_addr.to_string().as_bytes()).to_vec();
 
         handler.network().listen(Transport::Ws, self_addr)?;
+        trace!("{:?}", id);
+
+        if !saved_file_folder_exist(port) {
+            if let Err(x) = create_saved_file_folder(port) {
+                error!("ERROR {:?} trying to create the file for saved_files record", x);
+            }
+        }
+
+
+        let saved_files = load_from_folder(port).unwrap_or_default();
 
         let config = NodeConfig {
             id,
             self_addr,
-            saved_files: Default::default(),
+            saved_files,
             finger_table: vec![],
             predecessor: None,
             gossip_interval: Duration::from_secs(60),
@@ -81,7 +91,6 @@ impl NodeState {
         while handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
             trace!("Waiting for response...");
         }
-
 
         Ok(Self {
             handler,
@@ -140,38 +149,35 @@ impl NodeState {
     }
 }
 
+fn saved_file_folder_exist(port: u16) -> bool {
+    let folder_name = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES;
+    Path::new(&folder_name).exists()
+}
+
 fn forward_message(handler: &NodeHandler<ServerSignals>, endpoint: Endpoint, message: impl Serialize) {
     let output_data = bincode::serialize(&message).unwrap();
     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
         trace!("Waiting for response");
-
-        sleep(Duration::from_millis(1000));
     }
 }
 
 ///function to save the hashmap of key-file name
-fn save_to_folder(saved_files: &HashMap<String, String>, port: u16) -> io::Result<()> {
-    let folder_name = "server/".to_string() + port.to_string().as_str();
-    let file_name = "saved_files.txt";
+fn create_saved_file_folder(port: u16) -> io::Result<()> {
+    let folder_name = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/";
 
 
     if !Path::new(&folder_name).exists() {
         fs::create_dir(&folder_name)?;
     }
 
-    let file_path = folder_name + file_name;
+    let file_path = folder_name + SAVED_FILES;
     let mut file = File::create(&file_path)?;
-
-    for (key, value) in saved_files {
-        writeln!(file, "{}:{}", key, value)?;
-    }
-
-    trace!("Saved HashMap to {}", file_path);
+    file.flush()?;
     Ok(())
 }
 
 fn load_from_folder(port: u16) -> io::Result<HashMap<String, String>> {
-    let file_path = "server".to_string() + port.to_string().as_str() + "/saved_files.txt";
+    let file_path = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES;
     let mut saved_files = HashMap::new();
 
     let file = File::open(&file_path)?;

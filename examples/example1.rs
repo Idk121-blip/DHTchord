@@ -80,7 +80,7 @@ pub async fn main() {
                     let span = tracing::trace_span!("User1");
 
                     span.in_scope(|| {
-                        let file_name = "prova.txt";
+                        let file_name = "prova2.txt";
                         let file_path = "user/".to_string().add(file_name);
                         let file = File::open(file_path);
 

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::net::SocketAddr;
 
+pub(crate) const SERVER_FOLDER: &str = "server/";
+
 #[derive(Serialize, Deserialize)]
 pub(crate) enum Message {
     ChordMessage(ChordMessage),

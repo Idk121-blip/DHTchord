@@ -1,12 +1,12 @@
 use crate::common;
-use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage};
+use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
 use crate::errors::PutError;
-use crate::node_state::NodeConfig;
+use crate::node_state::{NodeConfig, SAVED_FILES};
 use digest::Digest;
 use message_io::network::Transport;
 use message_io::node::NodeHandler;
 use sha2::Sha256;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::ops::Add;
 use std::path::Path;
@@ -67,9 +67,7 @@ fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io:
 
     let digested_hex_file_name = hex::encode(Sha256::digest(name.as_bytes()));
 
-    trace!("hashed_file_name: {digested_hex_file_name}");
-
-    let destination = &("server/"
+    let destination = &(SERVER_FOLDER
         .to_string()
         .add(&port.to_string())
         .add("/")
@@ -83,8 +81,21 @@ fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io:
     let mut file = File::create(destination)?;
     file.write_all(&data)?;
     file.flush()?;
+
+    if !config.saved_files.contains_key(&digested_hex_file_name) {
+        append_in_saved_files_file(port, digested_hex_file_name.clone(), name.clone())?;
+    }
     config.saved_files.insert(digested_hex_file_name.clone(), name);
-    
     trace!("File stored successfully");
     Ok(digested_hex_file_name)
+}
+
+fn append_in_saved_files_file(port: u16, digested_hex_file: String, file_name: String) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES)
+        ?;
+
+    writeln!(file, "{}", digested_hex_file + ":" + file_name.as_str())?;
+    Ok(())
 }
