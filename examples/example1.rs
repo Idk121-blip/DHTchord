@@ -80,7 +80,7 @@ pub async fn main() {
                     let span = tracing::trace_span!("User1");
 
                     span.in_scope(|| {
-                        let file_name = "prova2.txt";
+                        let file_name = "prova.txt";
                         let file_path = "user/".to_string().add(file_name);
                         let file = File::open(file_path);
 
@@ -108,7 +108,7 @@ pub async fn main() {
                     let span = tracing::trace_span!("User2");
                     span.in_scope(|| {
                         sleep(Duration::from_secs(10));
-                        let input = "1b327397fa3ad27b485c62ebf16149c57371b30e31c052d23bd2fb576c9509e2".to_string();
+                        let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
                         user2.get("127.0.0.1:7777", sender_get, input);
                     });
                 }

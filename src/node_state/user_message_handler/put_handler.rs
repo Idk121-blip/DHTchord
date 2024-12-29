@@ -65,7 +65,6 @@ fn handle_user_put(
 fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io::Result<String> {
     let common::File { name, buffer: data } = file;
 
-
     let digested_hex_file_name = hex::encode(Sha256::digest(name.as_bytes()));
 
     trace!("hashed_file_name: {digested_hex_file_name}");
@@ -83,8 +82,9 @@ fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io:
 
     let mut file = File::create(destination)?;
     file.write_all(&data)?;
+    file.flush()?;
     config.saved_files.insert(digested_hex_file_name.clone(), name);
-
+    
     trace!("File stored successfully");
     Ok(digested_hex_file_name)
 }
