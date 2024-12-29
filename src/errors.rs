@@ -22,7 +22,7 @@ pub struct Error(Box<PutError>);
 pub type Result<T> = result::Result<T, Error>;
 
 impl Error {
-    pub fn kind(&self) -> &PutError {
+    pub const fn kind(&self) -> &PutError {
         &self.0
     }
 
@@ -37,8 +37,6 @@ pub(crate) fn new_error(kind: PutError) -> Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &*self.0 {
-            _ => write!(f, "{:?}", self.0),
-        }
+        write!(f, "{:?}", self.0)
     }
 }

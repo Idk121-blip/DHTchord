@@ -21,13 +21,11 @@ pub fn handle_forwarded_get(handler: &NodeHandler<ServerSignals>, config: &NodeC
 pub fn get_from_key(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, addr: String, key: String) -> ServerToUserMessage {
     match handle_user_get(handler, config, key.clone(), addr) {
         Ok(file) => ServerToUserMessage::RequestedFile(file),
-        Err(e) => {
-            match e {
-                GetError::ForwardingRequest(addr) => ServerToUserMessage::ForwarderTo(addr),
-                GetError::ErrorRetrievingFile => ServerToUserMessage::InternalServerError,
-                GetError::NotFound => ServerToUserMessage::FileNotFound(key),
-                GetError::HexConversion => ServerToUserMessage::HexConversionNotValid(key),
-            }
+        Err(e) => match e {
+            GetError::ForwardingRequest(addr) => ServerToUserMessage::ForwarderTo(addr),
+            GetError::ErrorRetrievingFile => ServerToUserMessage::InternalServerError,
+            GetError::NotFound => ServerToUserMessage::FileNotFound(key),
+            GetError::HexConversion => ServerToUserMessage::HexConversionNotValid(key),
         }
     }
 }

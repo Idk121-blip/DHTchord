@@ -19,6 +19,16 @@ pub fn handle_forwarded_put(handler: &NodeHandler<ServerSignals>, config: &mut N
     handler.signals().send(message);
 }
 
+pub fn put_user_file(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, file: common::File, user_addr: String) -> ServerToUserMessage {
+    match handle_user_put(handler, file, config, user_addr) {
+        Ok(saved_key) => ServerToUserMessage::SavedKey(saved_key),
+        Err(error) => match error {
+            PutError::ForwardingRequest(address) => ServerToUserMessage::ForwarderTo(address),
+            PutError::ErrorStoringFile => ServerToUserMessage::InternalServerError
+        },
+    }
+}
+
 fn handle_user_put(
     handler: &NodeHandler<ServerSignals>,
     file: common::File,
@@ -51,17 +61,6 @@ fn handle_user_put(
         config.finger_table[forwarding_index].to_string(),
     ))
 }
-
-pub fn put_user_file(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, file: common::File, user_addr: String) -> ServerToUserMessage {
-    match handle_user_put(handler, file, config, user_addr) {
-        Ok(saved_key) => ServerToUserMessage::SavedKey(saved_key),
-        Err(error) => match error {
-            PutError::ForwardingRequest(address) => ServerToUserMessage::ForwarderTo(address),
-            PutError::ErrorStoringFile => ServerToUserMessage::InternalServerError
-        },
-    }
-}
-
 
 fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io::Result<String> {
     let common::File { name, buffer: data } = file;

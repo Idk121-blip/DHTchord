@@ -78,5 +78,4 @@ pub(crate) fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> u
     }
 
     e
-    //todo Check if it's closer this one or the one that is predecessor
 }
