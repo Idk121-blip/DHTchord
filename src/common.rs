@@ -21,6 +21,8 @@ pub(crate) enum ChordMessage {
 
     NotifyPredecessor(SocketAddr),
 
+    NotifyPresence(SocketAddr),
+
     AddSuccessor(SocketAddr),
 
     AddPredecessor(SocketAddr),
@@ -36,6 +38,8 @@ pub(crate) enum ChordMessage {
     ForwardedGet(String, String),
 
     MoveFile(File),
+
+    Find(Vec<u8>, SocketAddr),
 }
 
 #[derive(Serialize, Deserialize)]

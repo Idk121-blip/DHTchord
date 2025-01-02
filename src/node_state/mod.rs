@@ -3,7 +3,7 @@ mod user_message_handler;
 
 use crate::common;
 use crate::common::ChordMessage::{self};
-use crate::common::{Message, ServerSignals, SERVER_FOLDER};
+use crate::common::{binary_search, Message, ServerSignals, SERVER_FOLDER};
 use crate::node_state::join_handler::handle_join;
 use crate::node_state::user_message_handler::get_handler::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::user_message_handler::handle_user_message;
@@ -17,10 +17,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use std::thread::sleep;
 use std::time::Duration;
 use std::{fs, io};
 use tracing::{error, info, trace};
+
+//TODO TENERE IN ORDINE IL VETTORE CON GLI INDIRIZZI (FINGTAB)
 
 const SAVED_FILES: &str = "saved_files.txt";
 
@@ -41,7 +42,7 @@ pub struct NodeConfig {
     pub(crate) predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
     gossip_interval: Duration,
-    sha: Sha256,
+    _sha: Sha256,
 }
 
 impl NodeState {
@@ -68,7 +69,7 @@ impl NodeState {
             finger_table: vec![],
             predecessor: None,
             gossip_interval: Duration::from_secs(15),
-            sha: Sha256::new(),
+            _sha: Sha256::new(),
         };
 
         Ok(Self {
@@ -260,11 +261,6 @@ fn handle_server_message(
 
             let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
-            trace!(
-                "{} {} aaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                new_endpoint.addr(),
-                endpoint.addr()
-            );
             handler
                 .signals()
                 .send(ServerSignals::ForwardMessage(new_endpoint, message));
@@ -280,6 +276,7 @@ fn handle_server_message(
         ChordMessage::MoveFile(file) => {
             let _ = save_in_server(file, config.self_addr.port(), config);
         }
+
         ChordMessage::NotifySuccessor(predecessor) => {
             if config.predecessor.unwrap() == predecessor {
                 return;
@@ -294,6 +291,59 @@ fn handle_server_message(
 
             move_files(handler, config, successor, &endpoint);
             //todo remove the first one if it's not n+2^i id
+        }
+        ChordMessage::Find(wanted_id, searching_address) => {
+            if wanted_id == config.id {
+                let (searching_endpoint, _) = handler.network().connect(Transport::Ws, searching_address).unwrap();
+                handler.signals().send(ServerSignals::ForwardMessage(
+                    searching_endpoint,
+                    Message::ChordMessage(ChordMessage::NotifyPresence(config.self_addr)),
+                ));
+                return;
+            }
+
+            let index = binary_search(config, &wanted_id);
+
+            let digested_address = Sha256::digest(config.finger_table[index].to_string().as_bytes()).to_vec();
+
+            if digested_address == wanted_id {
+                let (searching_endpoint, _) = handler.network().connect(Transport::Ws, searching_address).unwrap();
+                handler.signals().send(ServerSignals::ForwardMessage(
+                    searching_endpoint,
+                    Message::ChordMessage(ChordMessage::NotifyPresence(config.finger_table[index])),
+                ));
+                return;
+            }
+
+            let digested_ip_address_request = Sha256::digest(searching_address.to_string().as_bytes()).to_vec();
+
+            //3 cases 1) if we are returning to the "starting" point, 2) if the node doesn't exist
+            // 3) if we are restarting the circle (9->0, and we are looking for 10)
+            if config.id > wanted_id
+                && (digested_ip_address_request < wanted_id
+                    || wanted_id < digested_address
+                    || digested_address < config.id)
+            {
+                //not found no need to send a response since it will increase the traffic
+                return;
+            }
+
+            let (forwarding_endpoint, _) = handler
+                .network()
+                .connect(Transport::Ws, config.finger_table[index])
+                .unwrap();
+
+            handler.signals().send(ServerSignals::ForwardMessage(
+                forwarding_endpoint,
+                Message::ChordMessage(ChordMessage::Find(wanted_id, searching_address)),
+            ));
+        }
+        ChordMessage::NotifyPresence(addr) => {
+            let digested_address = Sha256::digest(addr.to_string().as_bytes()).to_vec();
+            let index = binary_search(config, &digested_address);
+
+            config.finger_table.insert(index, addr);
+            trace!("Node added to finger table ");
         }
     }
 }
