@@ -20,9 +20,9 @@ pub fn handle_user_message(
             trace!("Received file");
             put_user_file(handler, config, file, user_addr)
         }
-        UserMessage::Get(key, user_addr) => {
-            get_from_key(handler, config, user_addr, key)
-        }
+        UserMessage::Get(key, user_addr) => get_from_key(handler, config, user_addr, key),
     };
-    handler.network().send(endpoint, &bincode::serialize(&send_message).unwrap());
+    handler
+        .network()
+        .send(endpoint, &bincode::serialize(&send_message).unwrap());
 }

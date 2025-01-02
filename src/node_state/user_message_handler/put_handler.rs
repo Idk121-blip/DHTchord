@@ -13,18 +13,28 @@ use std::path::Path;
 use std::{fs, io};
 use tracing::trace;
 
-pub fn handle_forwarded_put(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: String, file: common::File) {
+pub fn handle_forwarded_put(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    addr: String,
+    file: common::File,
+) {
     let (ep, _) = handler.network().connect(Transport::Ws, &addr).unwrap();
     let message = ServerSignals::SendMessageToUser(ep, put_user_file(handler, config, file, addr));
     handler.signals().send(message);
 }
 
-pub fn put_user_file(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, file: common::File, user_addr: String) -> ServerToUserMessage {
+pub fn put_user_file(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    file: common::File,
+    user_addr: String,
+) -> ServerToUserMessage {
     match handle_user_put(handler, file, config, user_addr) {
         Ok(saved_key) => ServerToUserMessage::SavedKey(saved_key),
         Err(error) => match error {
             PutError::ForwardingRequest(address) => ServerToUserMessage::ForwarderTo(address),
-            PutError::ErrorStoringFile => ServerToUserMessage::InternalServerError
+            PutError::ErrorStoringFile => ServerToUserMessage::InternalServerError,
         },
     }
 }
@@ -42,8 +52,7 @@ fn handle_user_put(
         || config.id > successor && digested_file_name < successor
         || config.finger_table.is_empty()
     {
-        return save_in_server(file, config.self_addr.port(), config)
-            .map_or(Err(PutError::ErrorStoringFile), Ok);
+        return save_in_server(file, config.self_addr.port(), config).map_or(Err(PutError::ErrorStoringFile), Ok);
     }
 
     let forwarding_index = binary_search(config, &digested_file_name);
@@ -53,16 +62,17 @@ fn handle_user_put(
         .connect(Transport::Ws, config.finger_table[forwarding_index])
         .unwrap();
 
-    handler
-        .signals()
-        .send(ServerSignals::ForwardMessage(forwarding_endpoint, Message::ChordMessage(ChordMessage::ForwardedPut(addr, file))));
+    handler.signals().send(ServerSignals::ForwardMessage(
+        forwarding_endpoint,
+        Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
+    ));
 
     Err(PutError::ForwardingRequest(
         config.finger_table[forwarding_index].to_string(),
     ))
 }
 
-fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io::Result<String> {
+pub fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io::Result<String> {
     let common::File { name, buffer: data } = file;
 
     let digested_hex_file_name = hex::encode(Sha256::digest(name.as_bytes()));
@@ -93,8 +103,7 @@ fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io:
 fn append_in_saved_files_file(port: u16, digested_hex_file: String, file_name: String) -> io::Result<()> {
     let mut file = OpenOptions::new()
         .append(true)
-        .open(SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES)
-        ?;
+        .open(SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES)?;
 
     writeln!(file, "{}", digested_hex_file + ":" + file_name.as_str())?;
     Ok(())

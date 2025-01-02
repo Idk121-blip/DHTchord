@@ -7,7 +7,12 @@ use sha2::Sha256;
 use std::net::SocketAddr;
 use tracing::trace;
 
-pub fn handle_join(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, endpoint: Endpoint, addr: SocketAddr) {
+pub fn handle_join(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    endpoint: Endpoint,
+    addr: SocketAddr,
+) {
     trace!("entering join process");
 
     if config.finger_table.is_empty() {
@@ -38,7 +43,6 @@ pub fn handle_join(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig
     forward_request(handler, config, &node_id, &endpoint);
 }
 
-
 fn insert_in_empty_table(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
@@ -66,10 +70,11 @@ fn insert_between_self_and_predecessor(
 ) {
     let add_successor_message = Message::ChordMessage(ChordMessage::AddSuccessor(config.self_addr));
     let serialized = bincode::serialize(&add_successor_message).unwrap();
-    handler.network().send(*endpoint, &serialized);
+
+    handler.network().send(*endpoint, &serialized); //todo check status
     let add_predecessor_message = Message::ChordMessage(ChordMessage::AddPredecessor(config.predecessor.unwrap()));
     let serialized = bincode::serialize(&add_predecessor_message).unwrap();
-    handler.network().send(*endpoint, &serialized);
+    handler.network().send(*endpoint, &serialized); //todo check status
     config.predecessor = Some(*addr);
     trace!("join successfully");
 }

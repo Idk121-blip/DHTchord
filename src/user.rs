@@ -83,7 +83,8 @@ impl User {
         let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
         handler.network().send(
             ep,
-            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap());
+            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap(),
+        );
 
         let response = Arc::new(Mutex::new(Err(())));
 

@@ -16,7 +16,6 @@ pub enum GetError {
     HexConversion,
 }
 
-
 pub struct Error(Box<PutError>);
 
 pub type Result<T> = result::Result<T, Error>;

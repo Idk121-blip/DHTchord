@@ -1,12 +1,13 @@
 mod join_handler;
 mod user_message_handler;
 
+use crate::common;
 use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
 use crate::node_state::join_handler::handle_join;
-use crate::node_state::user_message_handler::get_handler::handle_forwarded_get;
+use crate::node_state::user_message_handler::get_handler::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::user_message_handler::handle_user_message;
-use crate::node_state::user_message_handler::put_handler::handle_forwarded_put;
+use crate::node_state::user_message_handler::put_handler::{handle_forwarded_put, save_in_server};
 use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use serde::Serialize;
@@ -16,9 +17,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
+use std::thread::sleep;
 use std::time::Duration;
 use std::{fs, io};
 use tracing::{error, info, trace};
+
 const SAVED_FILES: &str = "saved_files.txt";
 
 pub struct NodeState {
@@ -56,7 +59,6 @@ impl NodeState {
             }
         }
 
-
         let saved_files = load_from_folder(port).unwrap_or_default();
 
         let config = NodeConfig {
@@ -65,7 +67,7 @@ impl NodeState {
             saved_files,
             finger_table: vec![],
             predecessor: None,
-            gossip_interval: Duration::from_secs(60),
+            gossip_interval: Duration::from_secs(15),
             sha: Sha256::new(),
         };
 
@@ -76,7 +78,7 @@ impl NodeState {
         })
     }
 
-    pub fn connect_to(self, socket_addr: &str) -> Result<Self, io::Error> {
+    pub fn connect_and_run(self, socket_addr: &str) {
         let Self {
             handler,
             listener,
@@ -86,17 +88,18 @@ impl NodeState {
 
         let serialized = bincode::serialize(&message).unwrap();
 
-        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr)?;
+        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
 
         while handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
             trace!("Waiting for response...");
         }
 
-        Ok(Self {
+        Self {
             handler,
             listener,
             config,
-        })
+        }
+        .run();
     }
 
     pub fn run(self) {
@@ -107,6 +110,11 @@ impl NodeState {
         } = self;
 
         info!("start");
+
+        handler
+            .signals()
+            .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+
         listener.for_each(move |event| match event {
             NodeEvent::Network(net_event) => {
                 match net_event {
@@ -144,6 +152,14 @@ impl NodeState {
                     trace!("Forwarding message to user");
                     forward_message(&handler, endpoint, message);
                 }
+                ServerSignals::Stabilization() => {
+                    trace!("Stabilization");
+                    config.gossip_interval = Duration::from_secs(2);
+                    trace!("{:?}", config.finger_table);
+                    handler
+                        .signals()
+                        .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+                }
             },
         });
     }
@@ -164,7 +180,6 @@ fn forward_message(handler: &NodeHandler<ServerSignals>, endpoint: Endpoint, mes
 ///function to save the hashmap of key-file name
 fn create_saved_file_folder(port: u16) -> io::Result<()> {
     let folder_name = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/";
-
 
     if !Path::new(&folder_name).exists() {
         fs::create_dir(&folder_name)?;
@@ -200,7 +215,17 @@ fn handle_server_message(
     message: ChordMessage,
 ) {
     match message {
-        ChordMessage::AddPredecessor(addr) => config.predecessor = Some(addr), //todo send message to predecesor so that he knows his predecessor
+        ChordMessage::AddPredecessor(predecessor) => {
+            config.predecessor = Some(predecessor);
+            let (forwarding_endpoint, _) = handler.network().connect(Transport::Ws, predecessor).unwrap();
+            trace!("{} \n {}", endpoint.addr(), forwarding_endpoint.addr());
+            if forwarding_endpoint.addr() != endpoint.addr() {
+                handler.signals().send(ServerSignals::ForwardMessage(
+                    forwarding_endpoint,
+                    Message::ChordMessage(ChordMessage::NotifyPredecessor(config.self_addr)),
+                ));
+            }
+        } //todo send message to predecessor so that he knows his predecessor
         ChordMessage::SendStringMessage(mex, addr) => {
             let message = ChordMessage::Message(mex);
             trace!("Send message from {}, {}", addr, config.self_addr);
@@ -216,9 +241,18 @@ fn handle_server_message(
         ChordMessage::Message(message) => {
             trace!("Message received from other peer: {message}");
         }
-        ChordMessage::AddSuccessor(addr) => {
+        ChordMessage::AddSuccessor(successor) => {
             //trace!("Add successor {endpoint}, {mex} {}", self.config.self_addr);
-            config.finger_table.insert(0, addr);
+            config.finger_table.insert(0, successor);
+            move_files(handler, config, successor, &endpoint);
+
+            // let (forwarding_endpoint, _) = handler.network().connect(Transport::Ws, successor).unwrap();
+            //
+            // handler.signals().send(ServerSignals::ForwardMessage(
+            //     forwarding_endpoint,
+            //     Message::ChordMessage(ChordMessage::NotifySuccessor(config.self_addr)),
+            // ));
+
             trace!("{}, {:?}", config.self_addr, config.finger_table);
         }
         ChordMessage::ForwardedJoin(addr) => {
@@ -226,6 +260,11 @@ fn handle_server_message(
 
             let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
+            trace!(
+                "{} {} aaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                new_endpoint.addr(),
+                endpoint.addr()
+            );
             handler
                 .signals()
                 .send(ServerSignals::ForwardMessage(new_endpoint, message));
@@ -238,8 +277,54 @@ fn handle_server_message(
             trace!("Forwarded get");
             handle_forwarded_get(handler, config, addr, key);
         }
+        ChordMessage::MoveFile(file) => {
+            let _ = save_in_server(file, config.self_addr.port(), config);
+        }
+        ChordMessage::NotifySuccessor(predecessor) => {
+            if config.predecessor.unwrap() == predecessor {
+                return;
+            }
+            config.predecessor = Some(predecessor);
+        }
+        ChordMessage::NotifyPredecessor(successor) => {
+            if config.finger_table[0] == successor {
+                return;
+            }
+            config.finger_table.insert(0, successor);
+
+            move_files(handler, config, successor, &endpoint);
+            //todo remove the first one if it's not n+2^i id
+        }
     }
 }
 
+fn move_files(
+    handler: &NodeHandler<ServerSignals>,
+    config: &NodeConfig,
+    new_node_addr: SocketAddr,
+    endpoint: &Endpoint,
+) {
+    let digested_addr = Sha256::digest(new_node_addr.to_string().as_bytes()).to_vec();
 
+    let (forward_endpoint, _) = handler.network().connect(Transport::Ws, new_node_addr).unwrap();
 
+    trace!("{} {}", endpoint.addr(), forward_endpoint.addr());
+
+    for (key, file_name) in &config.saved_files {
+        let digested_key = hex::decode(key).unwrap();
+        if digested_key > digested_addr {
+            //todo move the file that is saved
+
+            let file_path = SERVER_FOLDER.to_string() + config.self_addr.port().to_string().as_str() + "/" + key;
+            let buffer = get_file_bytes(file_path.clone());
+            handler.signals().send(ServerSignals::ForwardMessage(
+                forward_endpoint,
+                Message::ChordMessage(ChordMessage::MoveFile(common::File {
+                    name: file_name.to_string(),
+                    buffer,
+                })),
+            ));
+            fs::remove_file(file_path).unwrap()
+        }
+    }
+}

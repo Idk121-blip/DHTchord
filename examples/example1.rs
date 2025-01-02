@@ -10,7 +10,6 @@ use DHTchord::common;
 use DHTchord::node_state::NodeState;
 use DHTchord::user::User;
 
-
 #[tokio::main]
 pub async fn main() {
     tracing_subscriber::fmt()
@@ -22,17 +21,15 @@ pub async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-
-    let (sender_put, receiver_put) = oneshot::channel();
-    let (sender_get, receiver_get) = oneshot::channel::<Result<common::File, ()>>();
-
-
-    tokio::spawn(async move {
-        println!("{:?}", receiver_put.await.unwrap());
-
-        println!("{:?}", receiver_get.await.unwrap());
-    });
-
+    // let (sender_put, receiver_put) = oneshot::channel();
+    // let (sender_get, receiver_get) = oneshot::channel::<Result<common::File, ()>>();
+    //
+    //
+    // tokio::spawn(async move {
+    //     println!("{:?}", receiver_put.await.unwrap());
+    //
+    //     println!("{:?}", receiver_get.await.unwrap());
+    // });
 
     thread::scope(|scope| {
         scope.spawn(|| {
@@ -48,12 +45,13 @@ pub async fn main() {
             }
         });
         scope.spawn(|| {
+            sleep(Duration::from_secs(1));
             //
             match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "8910".parse().unwrap()) {
                 Ok(server2) => {
                     sleep(Duration::from_secs(2));
                     let span = tracing::trace_span!("127.0.0.1:8910");
-                    span.in_scope(|| server2.connect_to("127.0.0.1:8911").unwrap().run());
+                    span.in_scope(|| server2.connect_and_run("127.0.0.1:8911"));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
@@ -62,10 +60,12 @@ pub async fn main() {
         });
         scope.spawn(|| {
             //
+            sleep(Duration::from_secs(2));
+
             match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7777".parse().unwrap()) {
                 Ok(server3) => {
                     let span = tracing::trace_span!("127.0.0.1:7777");
-                    span.in_scope(|| server3.connect_to("127.0.0.1:8911").unwrap().run());
+                    span.in_scope(|| server3.connect_and_run("127.0.0.1:8911"));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
@@ -74,48 +74,65 @@ pub async fn main() {
         });
 
         scope.spawn(|| {
-            match User::new("127.0.0.1".to_string(), "8700".to_string()) {
-                Ok(user1) => {
-                    sleep(Duration::from_secs(5));
-                    let span = tracing::trace_span!("User1");
-
-                    span.in_scope(|| {
-                        let file_name = "prova2.txt";
-                        let file_path = "user/".to_string().add(file_name);
-                        let file = File::open(file_path);
-
-                        let mut buffer = Vec::new();
-
-                        let _ = file.unwrap().read_to_end(&mut buffer);
-
-                        let file = common::File {
-                            name: file_name.to_string(),
-                            buffer,
-                        };
-
-                        user1.put("127.0.0.1:7777", sender_put, file);
-                    });
+            //
+            sleep(Duration::from_secs(3));
+            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7778".parse().unwrap()) {
+                Ok(server3) => {
+                    let span = tracing::trace_span!("127.0.0.1:7778");
+                    span.in_scope(|| server3.connect_and_run("127.0.0.1:8910"));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
                 }
             }
         });
-
-        scope.spawn(|| {
-            match User::new("127.0.0.1".to_string(), "8800".to_string()) {
-                Ok(user2) => {
-                    let span = tracing::trace_span!("User2");
-                    span.in_scope(|| {
-                        sleep(Duration::from_secs(10));
-                        let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
-                        user2.get("127.0.0.1:7777", sender_get, input);
-                    });
-                }
-                Err(error) => {
-                    eprintln!("{:?}", error)
-                }
-            }
-        });
+        // scope.spawn(|| {
+        //     sleep(Duration::from_secs(5));
+        //
+        //     match User::new("127.0.0.1".to_string(), "8700".to_string()) {
+        //         Ok(user1) => {
+        //             sleep(Duration::from_secs(5));
+        //             let span = tracing::trace_span!("User1");
+        //
+        //             span.in_scope(|| {
+        //                 let file_name = "prova2.txt";
+        //                 let file_path = "user/".to_string().add(file_name);
+        //                 let file = File::open(file_path);
+        //
+        //                 let mut buffer = Vec::new();
+        //
+        //                 let _ = file.unwrap().read_to_end(&mut buffer);
+        //
+        //                 let file = common::File {
+        //                     name: file_name.to_string(),
+        //                     buffer,
+        //                 };
+        //
+        //                 user1.put("127.0.0.1:7777", sender_put, file);
+        //             });
+        //         }
+        //         Err(error) => {
+        //             eprintln!("{:?}", error)
+        //         }
+        //     }
+        // });
+        //
+        // scope.spawn(|| {
+        //     sleep(Duration::from_secs(5));
+        //
+        //     match User::new("127.0.0.1".to_string(), "8800".to_string()) {
+        //         Ok(user2) => {
+        //             let span = tracing::trace_span!("User2");
+        //             span.in_scope(|| {
+        //                 sleep(Duration::from_secs(10));
+        //                 let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
+        //                 user2.get("127.0.0.1:7777", sender_get, input);
+        //             });
+        //         }
+        //         Err(error) => {
+        //             eprintln!("{:?}", error)
+        //         }
+        //     }
+        // });
     });
 }
