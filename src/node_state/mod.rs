@@ -12,7 +12,7 @@ use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{IpAddr, SocketAddr};
@@ -24,6 +24,8 @@ use tracing::{error, info, trace};
 //TODO TENERE IN ORDINE IL VETTORE CON GLI INDIRIZZI (FINGTAB)
 
 const SAVED_FILES: &str = "saved_files.txt";
+const ID_BYTES: usize = 32;
+const FINGER_TABLE_SIZE: usize = 256;
 
 pub struct NodeState {
     handler: NodeHandler<ServerSignals>,
@@ -39,10 +41,12 @@ pub struct NodeConfig {
     pub(crate) saved_files: HashMap<String, String>,
     ///List of successors node
     pub(crate) finger_table: Vec<SocketAddr>,
+
+    pub(crate) set_finger_table: HashSet<SocketAddr>,
+
     pub(crate) predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
     gossip_interval: Duration,
-    _sha: Sha256,
 }
 
 impl NodeState {
@@ -52,7 +56,6 @@ impl NodeState {
         let id = Sha256::digest(self_addr.to_string().as_bytes()).to_vec();
 
         handler.network().listen(Transport::Ws, self_addr)?;
-        trace!("{:?}", id);
 
         if !saved_file_folder_exist(port) {
             if let Err(x) = create_saved_file_folder(port) {
@@ -67,9 +70,9 @@ impl NodeState {
             self_addr,
             saved_files,
             finger_table: vec![],
+            set_finger_table: Default::default(),
             predecessor: None,
             gossip_interval: Duration::from_secs(15),
-            _sha: Sha256::new(),
         };
 
         Ok(Self {
@@ -116,6 +119,7 @@ impl NodeState {
             .signals()
             .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
 
+        //todo create a function to wrap this up
         listener.for_each(move |event| match event {
             NodeEvent::Network(net_event) => {
                 match net_event {
@@ -154,8 +158,34 @@ impl NodeState {
                     forward_message(&handler, endpoint, message);
                 }
                 ServerSignals::Stabilization() => {
+                    //TODO create a function to wrap this
                     trace!("Stabilization");
-                    config.gossip_interval = Duration::from_secs(2);
+                    config.gossip_interval = Duration::from_secs(5);
+
+                    let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
+                    let forwarding_index = binary_search(&config, &searching);
+                    let (endpoint, _) = handler
+                        .network()
+                        .connect(Transport::Ws, config.finger_table[forwarding_index])
+                        .unwrap();
+                    handler.signals().send(ServerSignals::ForwardMessage(
+                        endpoint,
+                        Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
+                    ));
+
+                    for i in 0..FINGER_TABLE_SIZE {
+                        let searching = binary_add(config.id.clone(), i, ID_BYTES).unwrap();
+                        let forwarding_index = binary_search(&config, &searching);
+                        let (endpoint, _) = handler
+                            .network()
+                            .connect(Transport::Ws, config.finger_table[forwarding_index])
+                            .unwrap();
+                        handler.signals().send(ServerSignals::ForwardMessage(
+                            endpoint,
+                            Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
+                        ));
+                    }
+
                     trace!("{:?}", config.finger_table);
                     handler
                         .signals()
@@ -164,6 +194,21 @@ impl NodeState {
             },
         });
     }
+}
+
+fn should_be_in_finger_table(vec1: &[u8], vec2: &[u8]) -> bool {
+    if vec1.len() != vec2.len() {
+        return false;
+    }
+
+    for (&byte1, &byte2) in vec1.iter().zip(vec2.iter()) {
+        let diff = (byte2 as i16 - byte1 as i16 + 256) % 256;
+        if diff == 0 || (diff & (diff - 1)) != 0 {
+            return false; // Difference must be a power of 2
+        }
+    }
+
+    true
 }
 
 fn saved_file_folder_exist(port: u16) -> bool {
@@ -219,14 +264,14 @@ fn handle_server_message(
         ChordMessage::AddPredecessor(predecessor) => {
             config.predecessor = Some(predecessor);
             let (forwarding_endpoint, _) = handler.network().connect(Transport::Ws, predecessor).unwrap();
-            trace!("{} \n {}", endpoint.addr(), forwarding_endpoint.addr());
+
             if forwarding_endpoint.addr() != endpoint.addr() {
                 handler.signals().send(ServerSignals::ForwardMessage(
                     forwarding_endpoint,
                     Message::ChordMessage(ChordMessage::NotifyPredecessor(config.self_addr)),
                 ));
             }
-        } //todo send message to predecessor so that he knows his predecessor
+        }
         ChordMessage::SendStringMessage(mex, addr) => {
             let message = ChordMessage::Message(mex);
             trace!("Send message from {}, {}", addr, config.self_addr);
@@ -307,6 +352,7 @@ fn handle_server_message(
             let digested_address = Sha256::digest(config.finger_table[index].to_string().as_bytes()).to_vec();
 
             if digested_address == wanted_id {
+                //iterative way
                 let (searching_endpoint, _) = handler.network().connect(Transport::Ws, searching_address).unwrap();
                 handler.signals().send(ServerSignals::ForwardMessage(
                     searching_endpoint,
@@ -377,4 +423,32 @@ fn move_files(
             fs::remove_file(file_path).unwrap()
         }
     }
+}
+
+fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, ()> {
+    let mut byte = bytes;
+    let power = (index % 8) as u8;
+
+    if (byte as isize - (index / 8) as isize) < 0 {
+        return Err(());
+    }
+    byte -= index / 8;
+    let mut specific_byte = vec[byte] as u16;
+
+    let mut x = 1;
+    x <<= power;
+
+    specific_byte += x;
+    let mut carry;
+    while specific_byte > 255 {
+        carry = specific_byte / 255;
+        vec[byte] = (specific_byte % 255) as u8;
+        if byte as isize - 1 < 0 {
+            break;
+        }
+        byte -= 1;
+        specific_byte = carry + vec[byte] as u16;
+    }
+
+    Ok(vec)
 }
