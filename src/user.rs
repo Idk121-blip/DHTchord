@@ -5,20 +5,21 @@ use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tracing::trace;
 
 pub struct User {
     handler: NodeHandler<()>,
     listener: NodeListener<()>,
-    listening_addr: String,
+    listening_addr: SocketAddr,
 }
 
 impl User {
     pub fn new(ip_addr: String, port: String) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
         let (_, listen_socket) = handler.network().listen(Transport::Ws, ip_addr + ":" + &port)?;
-        let listening_addr = listen_socket.to_string();
+        let listening_addr = listen_socket;
 
         Ok(Self {
             handler,
@@ -83,7 +84,8 @@ impl User {
         let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
         handler.network().send(
             ep,
-            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap());
+            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap(),
+        );
 
         let response = Arc::new(Mutex::new(Err(())));
 
