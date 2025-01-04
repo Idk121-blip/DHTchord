@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::Read;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::ops::Add;
 use std::thread;
 use std::thread::sleep;
@@ -51,7 +51,8 @@ pub async fn main() {
                 Ok(server2) => {
                     sleep(Duration::from_secs(2));
                     let span = tracing::trace_span!("127.0.0.1:8910");
-                    span.in_scope(|| server2.connect_and_run("127.0.0.1:8911"));
+                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8911);
+                    span.in_scope(|| server2.connect_and_run(socket_addr));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
@@ -62,10 +63,11 @@ pub async fn main() {
             //
             sleep(Duration::from_secs(2));
 
-            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7777".parse().unwrap()) {
+            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7779".parse().unwrap()) {
                 Ok(server3) => {
-                    let span = tracing::trace_span!("127.0.0.1:7777");
-                    span.in_scope(|| server3.connect_and_run("127.0.0.1:8911"));
+                    let span = tracing::trace_span!("127.0.0.1:7779");
+                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8911);
+                    span.in_scope(|| server3.connect_and_run(socket_addr));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)
@@ -77,9 +79,10 @@ pub async fn main() {
             //
             sleep(Duration::from_secs(3));
             match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7778".parse().unwrap()) {
-                Ok(server3) => {
+                Ok(server4) => {
                     let span = tracing::trace_span!("127.0.0.1:7778");
-                    span.in_scope(|| server3.connect_and_run("127.0.0.1:8910"));
+                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8910);
+                    span.in_scope(|| server4.connect_and_run(socket_addr));
                 }
                 Err(error) => {
                     eprintln!("{:?}", error)

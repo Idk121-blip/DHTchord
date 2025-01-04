@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
+use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
 use crate::errors::PutError;
 use crate::node_state::{NodeConfig, SAVED_FILES};
 use digest::Digest;
@@ -8,6 +8,7 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::net::SocketAddr;
 use std::ops::Add;
 use std::path::Path;
 use std::{fs, io};
@@ -16,11 +17,11 @@ use tracing::trace;
 pub fn handle_forwarded_put(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
-    addr: String,
+    addr: SocketAddr,
     file: common::File,
 ) {
-    let (ep, _) = handler.network().connect(Transport::Ws, &addr).unwrap();
-    let message = ServerSignals::SendMessageToUser(ep, put_user_file(handler, config, file, addr));
+    let endpoint = get_endpoint(handler, config, addr);
+    let message = ServerSignals::SendMessageToUser(endpoint, put_user_file(handler, config, file, addr));
     handler.signals().send(message);
 }
 
@@ -28,7 +29,7 @@ pub fn put_user_file(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     file: common::File,
-    user_addr: String,
+    user_addr: SocketAddr,
 ) -> ServerToUserMessage {
     match handle_user_put(handler, file, config, user_addr) {
         Ok(saved_key) => ServerToUserMessage::SavedKey(saved_key),
@@ -43,7 +44,7 @@ fn handle_user_put(
     handler: &NodeHandler<ServerSignals>,
     file: common::File,
     config: &mut NodeConfig,
-    addr: String,
+    addr: SocketAddr,
 ) -> Result<String, PutError> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
@@ -57,10 +58,7 @@ fn handle_user_put(
 
     let forwarding_index = binary_search(config, &digested_file_name);
 
-    let (forwarding_endpoint, _) = handler
-        .network()
-        .connect(Transport::Ws, config.finger_table[forwarding_index])
-        .unwrap();
+    let forwarding_endpoint = get_endpoint(handler, config, addr);
 
     handler.signals().send(ServerSignals::ForwardMessage(
         forwarding_endpoint,

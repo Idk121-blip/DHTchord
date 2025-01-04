@@ -1,6 +1,7 @@
 use crate::node_state::NodeConfig;
 use digest::Digest;
-use message_io::network::Endpoint;
+use message_io::network::{Endpoint, Transport};
+use message_io::node::NodeHandler;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::net::SocketAddr;
@@ -31,11 +32,11 @@ pub(crate) enum ChordMessage {
 
     Message(String),
 
-    ForwardedJoin(String),
+    ForwardedJoin(SocketAddr),
 
-    ForwardedPut(String, File),
+    ForwardedPut(SocketAddr, File),
 
-    ForwardedGet(String, String),
+    ForwardedGet(SocketAddr, String),
 
     MoveFile(File),
 
@@ -61,9 +62,9 @@ pub(crate) enum ServerSignals {
 #[derive(Serialize, Deserialize)]
 pub(crate) enum UserMessage {
     ///Put(file_to_save, self_address)
-    Put(File, String),
+    Put(File, SocketAddr),
     ///Get(key, self_address)
-    Get(String, String),
+    Get(String, SocketAddr),
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct File {
@@ -89,4 +90,18 @@ pub(crate) fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> u
     }
 
     e
+}
+
+pub(crate) fn get_endpoint(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, socket_addr: SocketAddr) -> Endpoint {
+    if let std::collections::hash_map::Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
+        let (endpoint, _) = handler
+            
+            .network()
+            .connect(Transport::Ws, socket_addr)
+            .unwrap();
+        e.insert(endpoint);
+        endpoint
+    } else {
+        *config.finger_table_map.get(&socket_addr).unwrap()
+    }
 }

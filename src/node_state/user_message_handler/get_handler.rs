@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{binary_search, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
+use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
 use crate::errors::GetError;
 use crate::node_state::NodeConfig;
 use digest::Digest;
@@ -8,20 +8,21 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs::File;
 use std::io::Read;
+use std::net::SocketAddr;
 use std::ops::Add;
 use tracing::trace;
 
-pub fn handle_forwarded_get(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, addr: String, key: String) {
+pub fn handle_forwarded_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: SocketAddr, key: String) {
     trace!("{addr}");
-    let (endpoint, _) = handler.network().connect(Transport::Ws, &addr).unwrap();
+    let endpoint = get_endpoint(handler, config, addr);
     let message = ServerSignals::SendMessageToUser(endpoint, get_from_key(handler, config, addr, key));
     handler.signals().send(message);
 }
 
 pub fn get_from_key(
     handler: &NodeHandler<ServerSignals>,
-    config: &NodeConfig,
-    addr: String,
+    config: &mut NodeConfig,
+    addr: SocketAddr,
     key: String,
 ) -> ServerToUserMessage {
     match handle_user_get(handler, config, key.clone(), addr) {
@@ -37,9 +38,9 @@ pub fn get_from_key(
 
 fn handle_user_get(
     handler: &NodeHandler<ServerSignals>,
-    config: &NodeConfig,
+    config: &mut NodeConfig,
     key: String,
-    addr: String,
+    addr: SocketAddr,
 ) -> Result<common::File, GetError> {
     trace!("Handling user get");
 
@@ -75,11 +76,9 @@ fn handle_user_get(
         }
 
         let forwarding_index = binary_search(config, &digested_file_name); // todo check code duplication with put
+        let forwarding_address = config.finger_table[forwarding_index];
 
-        let (forwarding_endpoint, _) = handler
-            .network()
-            .connect(Transport::Ws, config.finger_table[forwarding_index])
-            .unwrap();
+        let forwarding_endpoint = get_endpoint(handler, config, forwarding_address);
 
         handler.signals().send(ServerSignals::ForwardMessage(
             forwarding_endpoint,

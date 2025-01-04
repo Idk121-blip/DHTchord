@@ -3,20 +3,22 @@ mod user_message_handler;
 
 use crate::common;
 use crate::common::ChordMessage::{self};
-use crate::common::{binary_search, Message, ServerSignals, SERVER_FOLDER};
+use crate::common::{binary_search, get_endpoint, Message, ServerSignals, SERVER_FOLDER};
 use crate::node_state::join_handler::handle_join;
 use crate::node_state::user_message_handler::get_handler::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::user_message_handler::handle_user_message;
 use crate::node_state::user_message_handler::put_handler::{handle_forwarded_put, save_in_server};
-use message_io::network::{Endpoint, NetEvent, SendStatus, Transport};
+use message_io::network::{Endpoint, NetEvent, SendStatus, ToRemoteAddr, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::ops::Mul;
 use std::path::Path;
+use std::thread::sleep;
 use std::time::Duration;
 use std::{fs, io};
 use tracing::{error, info, trace};
@@ -25,7 +27,9 @@ use tracing::{error, info, trace};
 
 const SAVED_FILES: &str = "saved_files.txt";
 const ID_BYTES: usize = 32;
-const FINGER_TABLE_SIZE: usize = 256;
+const FINGER_TABLE_SIZE: usize = 4;
+
+const MAXIMUM_DURATION: Duration = Duration::from_secs(320);
 
 pub struct NodeState {
     handler: NodeHandler<ServerSignals>,
@@ -42,7 +46,7 @@ pub struct NodeConfig {
     ///List of successors node
     pub(crate) finger_table: Vec<SocketAddr>,
 
-    pub(crate) set_finger_table: HashSet<SocketAddr>,
+    pub(crate) finger_table_map: HashMap<SocketAddr, Endpoint>,
 
     pub(crate) predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
@@ -56,6 +60,7 @@ impl NodeState {
         let id = Sha256::digest(self_addr.to_string().as_bytes()).to_vec();
 
         handler.network().listen(Transport::Ws, self_addr)?;
+        handler.network().listen(Transport::Udp, self_addr)?;
 
         if !saved_file_folder_exist(port) {
             if let Err(x) = create_saved_file_folder(port) {
@@ -70,9 +75,9 @@ impl NodeState {
             self_addr,
             saved_files,
             finger_table: vec![],
-            set_finger_table: Default::default(),
+            finger_table_map: Default::default(),
             predecessor: None,
-            gossip_interval: Duration::from_secs(15),
+            gossip_interval: Duration::from_secs(5),
         };
 
         Ok(Self {
@@ -82,17 +87,23 @@ impl NodeState {
         })
     }
 
-    pub fn connect_and_run(self, socket_addr: &str) {
+    pub fn personalized_id_test(&mut self, new_test_id: Vec<u8>) {
+        self.config.id = new_test_id;
+    }
+
+    pub fn connect_and_run(self, socket_addr: SocketAddr) {
         let Self {
             handler,
             listener,
-            config,
+            mut config,
         } = self;
         let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
 
         let serialized = bincode::serialize(&message).unwrap();
 
         let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
+
+        config.finger_table_map.insert(socket_addr, endpoint);
 
         while handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
             trace!("Waiting for response...");
@@ -102,8 +113,7 @@ impl NodeState {
             handler,
             listener,
             config,
-        }
-        .run();
+        }.run();
     }
 
     pub fn run(self) {
@@ -150,24 +160,38 @@ impl NodeState {
             }
             NodeEvent::Signal(signal) => match signal {
                 ServerSignals::ForwardMessage(endpoint, message) => {
-                    trace!("Forwarding internal message");
-                    forward_message(&handler, endpoint, message);
+                    //trace!("Forwarding internal message");
+
+                    let output_data = bincode::serialize(&message).unwrap();
+
+                    if handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                        trace!(" Waiting for response {}", endpoint);
+                        handler.signals().send(ServerSignals::ForwardMessage(endpoint, message))
+                    }
+
+                    //forward_message(&handler, endpoint, message, config.self_addr);
                 }
                 ServerSignals::SendMessageToUser(endpoint, message) => {
                     trace!("Forwarding message to user");
-                    forward_message(&handler, endpoint, message);
+                    forward_message(&handler, endpoint, message, config.self_addr);
                 }
                 ServerSignals::Stabilization() => {
                     //TODO create a function to wrap this
                     trace!("Stabilization");
-                    config.gossip_interval = Duration::from_secs(5);
+                    if config.gossip_interval.lt(&MAXIMUM_DURATION) {
+                        let new_interval = config.gossip_interval.mul(2);
+                        config.gossip_interval = new_interval;
+                    }
+
 
                     let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
-                    let forwarding_index = binary_search(&config, &searching);
-                    let (endpoint, _) = handler
-                        .network()
-                        .connect(Transport::Ws, config.finger_table[forwarding_index])
-                        .unwrap();
+                    let mut forwarding_index = binary_search(&config, &searching);
+
+                    let socket_address = config.finger_table[forwarding_index];
+
+                    let mut endpoint = get_endpoint(&handler, &mut config, socket_address);
+
+
                     handler.signals().send(ServerSignals::ForwardMessage(
                         endpoint,
                         Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
@@ -175,18 +199,19 @@ impl NodeState {
 
                     for i in 0..FINGER_TABLE_SIZE {
                         let searching = binary_add(config.id.clone(), i, ID_BYTES).unwrap();
-                        let forwarding_index = binary_search(&config, &searching);
-                        let (endpoint, _) = handler
-                            .network()
-                            .connect(Transport::Ws, config.finger_table[forwarding_index])
-                            .unwrap();
+                        let new_forwarding_index = binary_search(&config, &searching);
+
+                        let socket_address = config.finger_table[new_forwarding_index];
+
+                        endpoint = get_endpoint(&handler, &mut config, socket_address);
+
                         handler.signals().send(ServerSignals::ForwardMessage(
                             endpoint,
                             Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
                         ));
                     }
 
-                    trace!("{:?}", config.finger_table);
+                    //trace!("{:?}", config.finger_table);
                     handler
                         .signals()
                         .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
@@ -195,6 +220,7 @@ impl NodeState {
         });
     }
 }
+
 
 fn should_be_in_finger_table(vec1: &[u8], vec2: &[u8]) -> bool {
     if vec1.len() != vec2.len() {
@@ -216,10 +242,11 @@ fn saved_file_folder_exist(port: u16) -> bool {
     Path::new(&folder_name).exists()
 }
 
-fn forward_message(handler: &NodeHandler<ServerSignals>, endpoint: Endpoint, message: impl Serialize) {
+fn forward_message(handler: &NodeHandler<ServerSignals>, endpoint: Endpoint, message: impl Serialize, addr: SocketAddr) {
     let output_data = bincode::serialize(&message).unwrap();
+
     while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-        trace!("Waiting for response");
+        trace!("{} Waiting for response {}",  addr, endpoint);
     }
 }
 
@@ -263,7 +290,8 @@ fn handle_server_message(
     match message {
         ChordMessage::AddPredecessor(predecessor) => {
             config.predecessor = Some(predecessor);
-            let (forwarding_endpoint, _) = handler.network().connect(Transport::Ws, predecessor).unwrap();
+
+            let forwarding_endpoint = get_endpoint(handler, config, predecessor);
 
             if forwarding_endpoint.addr() != endpoint.addr() {
                 handler.signals().send(ServerSignals::ForwardMessage(
@@ -292,8 +320,13 @@ fn handle_server_message(
             config.finger_table.insert(0, successor);
             move_files(handler, config, successor, &endpoint);
 
-            // let (forwarding_endpoint, _) = handler.network().connect(Transport::Ws, successor).unwrap();
-            //
+            let forwarding_endpoint = get_endpoint(handler, config, successor);
+
+            if forwarding_endpoint.addr() == endpoint.addr() {
+                trace!("{}, {:?}", config.self_addr, config.finger_table);
+                return;
+            }
+
             // handler.signals().send(ServerSignals::ForwardMessage(
             //     forwarding_endpoint,
             //     Message::ChordMessage(ChordMessage::NotifySuccessor(config.self_addr)),
@@ -304,7 +337,7 @@ fn handle_server_message(
         ChordMessage::ForwardedJoin(addr) => {
             trace!("Forwarded join, joining {addr}");
 
-            let (new_endpoint, _) = handler.network().connect(Transport::Ws, addr).unwrap();
+            let new_endpoint = get_endpoint(handler, config, addr);
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
             handler
                 .signals()
@@ -339,7 +372,7 @@ fn handle_server_message(
         }
         ChordMessage::Find(wanted_id, searching_address) => {
             if wanted_id == config.id {
-                let (searching_endpoint, _) = handler.network().connect(Transport::Ws, searching_address).unwrap();
+                let searching_endpoint = get_endpoint(handler, config, searching_address);
                 handler.signals().send(ServerSignals::ForwardMessage(
                     searching_endpoint,
                     Message::ChordMessage(ChordMessage::NotifyPresence(config.self_addr)),
@@ -353,7 +386,7 @@ fn handle_server_message(
 
             if digested_address == wanted_id {
                 //iterative way
-                let (searching_endpoint, _) = handler.network().connect(Transport::Ws, searching_address).unwrap();
+                let searching_endpoint = get_endpoint(handler, config, searching_address);
                 handler.signals().send(ServerSignals::ForwardMessage(
                     searching_endpoint,
                     Message::ChordMessage(ChordMessage::NotifyPresence(config.finger_table[index])),
@@ -365,19 +398,19 @@ fn handle_server_message(
 
             //3 cases 1) if we are returning to the "starting" point, 2) if the node doesn't exist
             // 3) if we are restarting the circle (9->0, and we are looking for 10)
-            if config.id > wanted_id
+            if (config.id > wanted_id
                 && (digested_ip_address_request < wanted_id
-                    || wanted_id < digested_address
-                    || digested_address < config.id)
+                || wanted_id < digested_address
+                || digested_address < config.id)) || digested_ip_address_request == digested_address
             {
                 //not found no need to send a response since it will increase the traffic
                 return;
             }
 
-            let (forwarding_endpoint, _) = handler
-                .network()
-                .connect(Transport::Ws, config.finger_table[index])
-                .unwrap();
+            let forwarding_address = config.finger_table[index];
+
+
+            let forwarding_endpoint = get_endpoint(handler, config, forwarding_address);
 
             handler.signals().send(ServerSignals::ForwardMessage(
                 forwarding_endpoint,
@@ -385,9 +418,13 @@ fn handle_server_message(
             ));
         }
         ChordMessage::NotifyPresence(addr) => {
+            trace!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
             let digested_address = Sha256::digest(addr.to_string().as_bytes()).to_vec();
             let index = binary_search(config, &digested_address);
-
+            trace!("{:?}\n {:?}",digested_address, config.id);
+            if config.finger_table[index] == addr {
+                return;
+            }
             config.finger_table.insert(index, addr);
             trace!("Node added to finger table ");
         }
@@ -396,13 +433,13 @@ fn handle_server_message(
 
 fn move_files(
     handler: &NodeHandler<ServerSignals>,
-    config: &NodeConfig,
+    config: &mut NodeConfig,
     new_node_addr: SocketAddr,
     endpoint: &Endpoint,
 ) {
     let digested_addr = Sha256::digest(new_node_addr.to_string().as_bytes()).to_vec();
 
-    let (forward_endpoint, _) = handler.network().connect(Transport::Ws, new_node_addr).unwrap();
+    let forward_endpoint = get_endpoint(handler, config, new_node_addr);
 
     trace!("{} {}", endpoint.addr(), forward_endpoint.addr());
 
@@ -426,12 +463,12 @@ fn move_files(
 }
 
 fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, ()> {
-    let mut byte = bytes;
+    let mut byte = bytes - 1;
     let power = (index % 8) as u8;
-
     if (byte as isize - (index / 8) as isize) < 0 {
         return Err(());
     }
+
     byte -= index / 8;
     let mut specific_byte = vec[byte] as u16;
 
@@ -440,15 +477,20 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
 
     specific_byte += x;
     let mut carry;
-    while specific_byte > 255 {
-        carry = specific_byte / 255;
-        vec[byte] = (specific_byte % 255) as u8;
-        if byte as isize - 1 < 0 {
-            break;
-        }
-        byte -= 1;
-        specific_byte = carry + vec[byte] as u16;
-    }
+    if specific_byte > 255 {
+        while specific_byte > 255 {
+            carry = specific_byte / 255;
 
+            vec[byte] = (specific_byte % 255) as u8;
+
+            if byte as isize - 1 < 0 {
+                break;
+            }
+            byte -= 1;
+            specific_byte = carry + vec[byte] as u16;
+        }
+    } else {
+        vec[byte] = (specific_byte % 255) as u8;
+    }
     Ok(vec)
 }
