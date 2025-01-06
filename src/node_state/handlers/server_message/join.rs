@@ -108,4 +108,3 @@ fn forward_request(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, no
         trace!("Waiting for response...");
     }
 }
-

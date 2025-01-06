@@ -1,3 +1,3 @@
-pub mod user_message;
-pub mod server_message;
 pub mod event;
+pub mod server_message;
+pub mod user_message;

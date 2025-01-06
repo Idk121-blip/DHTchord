@@ -134,8 +134,8 @@ pub fn handle_server_message(
             // 3) if we are restarting the circle (9->0, and we are looking for 10)
             if (config.id > wanted_id
                 && (digested_ip_address_request < wanted_id
-                || wanted_id < digested_address
-                || digested_address < config.id))
+                    || wanted_id < digested_address
+                    || digested_address < config.id))
                 || digested_ip_address_request == digested_address
             {
                 //not found no need to send a response since it will increase the traffic

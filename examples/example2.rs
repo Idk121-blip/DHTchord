@@ -26,7 +26,6 @@ pub async fn main() {
     let (sender_put, receiver_put) = oneshot::channel();
     let (sender_get, receiver_get) = oneshot::channel::<Result<common::File, ()>>();
 
-
     tokio::spawn(async move {
         println!("{:?}", receiver_put.await.unwrap());
 

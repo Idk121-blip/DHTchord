@@ -106,7 +106,7 @@ impl NodeState {
             listener,
             config,
         }
-            .run();
+        .run();
     }
 
     pub fn run(self) {
@@ -132,7 +132,6 @@ fn saved_file_folder_exist(port: u16) -> bool {
     let folder_name = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/" + SAVED_FILES;
     Path::new(&folder_name).exists()
 }
-
 
 ///function to save the hashmap of key-file name
 fn create_saved_file_folder(port: u16) -> io::Result<()> {
