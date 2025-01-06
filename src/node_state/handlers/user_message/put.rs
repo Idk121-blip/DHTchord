@@ -1,9 +1,10 @@
 use crate::common;
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
+use crate::common::{
+    binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER,
+};
 use crate::errors::PutError;
 use crate::node_state::{NodeConfig, SAVED_FILES};
 use digest::Digest;
-use message_io::network::Transport;
 use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs::{File, OpenOptions};

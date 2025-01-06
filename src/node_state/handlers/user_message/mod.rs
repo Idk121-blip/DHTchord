@@ -1,9 +1,9 @@
-pub mod get_handler;
-pub mod put_handler;
+pub mod get;
+pub mod put;
 
 use crate::common::{ServerSignals, UserMessage};
-use crate::node_state::user_message_handler::get_handler::get_from_key;
-use crate::node_state::user_message_handler::put_handler::put_user_file;
+use crate::node_state::handlers::user_message::get::get_from_key;
+use crate::node_state::handlers::user_message::put::put_user_file;
 use crate::node_state::NodeConfig;
 use message_io::network::Endpoint;
 use message_io::node::NodeHandler;
