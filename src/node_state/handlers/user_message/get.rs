@@ -1,9 +1,10 @@
 use crate::common;
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER};
+use crate::common::{
+    binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER,
+};
 use crate::errors::GetError;
 use crate::node_state::NodeConfig;
 use digest::Digest;
-use message_io::network::Transport;
 use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs::File;
@@ -12,7 +13,12 @@ use std::net::SocketAddr;
 use std::ops::Add;
 use tracing::trace;
 
-pub fn handle_forwarded_get(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, addr: SocketAddr, key: String) {
+pub fn handle_forwarded_get(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    addr: SocketAddr,
+    key: String,
+) {
     trace!("{addr}");
     let endpoint = get_endpoint(handler, config, addr);
     let message = ServerSignals::SendMessageToUser(endpoint, get_from_key(handler, config, addr, key));

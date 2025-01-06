@@ -1,4 +1,7 @@
-use crate::common::{binary_search, ChordMessage, Message, ServerSignals};
+use crate::common::binary_search;
+use crate::common::ChordMessage;
+use crate::common::Message;
+use crate::common::ServerSignals;
 use crate::node_state::NodeConfig;
 use digest::Digest;
 use message_io::network::{Endpoint, SendStatus};
@@ -98,12 +101,11 @@ fn insert_between_self_and_successor(
 
 fn forward_request(handler: &NodeHandler<ServerSignals>, config: &NodeConfig, node_id: &Vec<u8>, endpoint: &Endpoint) {
     let forward_position = binary_search(config, node_id);
-    let message = Message::ChordMessage(ChordMessage::ForwardedJoin(
-        config.finger_table[forward_position],
-    ));
+    let message = Message::ChordMessage(ChordMessage::ForwardedJoin(config.finger_table[forward_position]));
     let serialized = bincode::serialize(&message).unwrap();
 
     while handler.network().send(*endpoint, &serialized) == SendStatus::ResourceNotAvailable {
         trace!("Waiting for response...");
     }
 }
+

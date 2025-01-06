@@ -92,13 +92,13 @@ pub(crate) fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> u
     e
 }
 
-pub(crate) fn get_endpoint(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, socket_addr: SocketAddr) -> Endpoint {
+pub(crate) fn get_endpoint(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    socket_addr: SocketAddr,
+) -> Endpoint {
     if let std::collections::hash_map::Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
-        let (endpoint, _) = handler
-            
-            .network()
-            .connect(Transport::Ws, socket_addr)
-            .unwrap();
+        let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
         e.insert(endpoint);
         endpoint
     } else {
