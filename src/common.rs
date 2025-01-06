@@ -39,6 +39,8 @@ pub(crate) enum ChordMessage {
 
     MoveFile(File),
 
+    HeartBeat(SocketAddr, SocketAddr),
+
     Find(Vec<u8>, SocketAddr),
 }
 
@@ -55,6 +57,7 @@ pub(crate) enum ServerToUserMessage {
 pub(crate) enum ServerSignals {
     ForwardMessage(Endpoint, Message),
     SendMessageToUser(Endpoint, ServerToUserMessage),
+    HeartBeat(),
     Stabilization(),
 }
 
@@ -72,6 +75,9 @@ pub struct File {
 }
 
 pub(crate) fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> usize {
+    if config.finger_table.is_empty() {
+        return 0;
+    }
     let mut s = 0;
     let mut e = config.finger_table.len();
     while s < e {
@@ -96,11 +102,11 @@ pub(crate) fn get_endpoint(
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    if let Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
+    if let Entry::Vacant(e) = config.known_endpoints.entry(socket_addr) {
         let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
         e.insert(endpoint);
         endpoint
     } else {
-        *config.finger_table_map.get(&socket_addr).unwrap()
+        *config.known_endpoints.get(&socket_addr).unwrap()
     }
 }

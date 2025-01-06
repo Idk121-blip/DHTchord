@@ -4,6 +4,7 @@ use crate::node_state::handlers::server_message::find::find_handler;
 use crate::node_state::handlers::user_message::get::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::handlers::user_message::put::{handle_forwarded_put, save_in_server};
 use crate::node_state::NodeConfig;
+use chrono::Utc;
 use digest::Digest;
 use join::handle_join;
 use message_io::network::Endpoint;
@@ -11,11 +12,12 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs;
 use std::net::SocketAddr;
+use std::time::Duration;
 use tracing::trace;
 
+mod find;
 pub mod join;
 pub mod stabilization;
-mod find;
 
 pub fn handle_server_message(
     handler: &NodeHandler<ServerSignals>,
@@ -50,15 +52,16 @@ pub fn handle_server_message(
             move_files(handler, config, successor, &endpoint);
 
             let forwarding_endpoint = get_endpoint(handler, config, successor);
+            config.last_modified = Utc::now();
 
             if forwarding_endpoint.addr() == endpoint.addr() {
                 return;
             }
 
-            // handler.signals().send(ServerSignals::ForwardMessage(
-            //     forwarding_endpoint,
-            //     Message::ChordMessage(ChordMessage::NotifySuccessor(config.self_addr)),
-            // ));
+            handler.signals().send(ServerSignals::ForwardMessage(
+                forwarding_endpoint,
+                Message::ChordMessage(ChordMessage::NotifySuccessor(config.self_addr)),
+            ));
 
             trace!("{}, {:?}", config.self_addr, config.finger_table);
         }
@@ -84,12 +87,14 @@ pub fn handle_server_message(
         }
 
         ChordMessage::NotifySuccessor(predecessor) => {
-            if config.predecessor.unwrap() == predecessor {
+            if config.predecessor.is_some() && config.predecessor.unwrap() == predecessor {
                 return;
             }
             config.predecessor = Some(predecessor);
         }
         ChordMessage::NotifyPredecessor(successor) => {
+            config.last_modified = Utc::now();
+
             if config.finger_table[0] == successor {
                 return;
             }
@@ -102,6 +107,11 @@ pub fn handle_server_message(
             find_handler(handler, config, wanted_id, searching_address);
         }
         ChordMessage::NotifyPresence(addr) => {
+            if !config.finger_table.is_empty() && addr == config.finger_table[0] {
+                config.last_modified = Utc::now();
+                return;
+            }
+
             let digested_address = Sha256::digest(addr.to_string().as_bytes()).to_vec();
             let index = binary_search(config, &digested_address);
             trace!("{:?}\n {:?}", digested_address, config.id);
@@ -110,6 +120,21 @@ pub fn handle_server_message(
             }
             config.finger_table.insert(index, addr);
             trace!("Node added to finger table ");
+        }
+        ChordMessage::HeartBeat(successor_address, successors_successor_address) => {
+            if (!config.finger_table.is_empty() && successor_address != config.finger_table[0])
+                || config.finger_table.is_empty()
+            {
+                config.finger_table.insert(0, successor_address);
+            }
+
+            if (!config.successors_cache.is_empty() && successors_successor_address != config.successors_cache[0])
+                || config.successors_cache.is_empty()
+            {
+                config.successors_cache.insert(0, successors_successor_address);
+            }
+
+            config.last_modified = Utc::now();
         }
     }
 }

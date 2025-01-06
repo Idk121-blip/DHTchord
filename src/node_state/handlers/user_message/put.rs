@@ -51,7 +51,10 @@ fn handle_user_put(
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor)) && !(config.id > successor && digested_file_name < successor) && !config.finger_table.is_empty() {
+    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+        && !(config.id > successor && digested_file_name < successor)
+        && !config.finger_table.is_empty()
+    {
         let forwarding_index = binary_search(config, &digested_file_name);
 
         let forwarding_endpoint = get_endpoint(handler, config, addr);

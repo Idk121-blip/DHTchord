@@ -38,8 +38,23 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
 }
 
 pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
-    //TODO create a function to wrap this
-    trace!("Stabilization");
+    check_successor(handler, config);
+
+    update_finger_table(handler, config);
+}
+
+fn check_successor(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
+    todo!(); // todo implement
+    let _endpoint = get_endpoint(handler, config, config.finger_table[0]);
+}
+
+fn update_finger_table(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
+    if config.finger_table.is_empty() {
+        handler
+            .signals()
+            .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+        return;
+    }
     if config.gossip_interval.lt(&MAXIMUM_DURATION) {
         let new_interval = config.gossip_interval.mul(2);
         config.gossip_interval = new_interval;
@@ -68,8 +83,8 @@ pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut
             Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
         ));
     }
-
     handler
         .signals()
         .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+    trace!("{:?}", config.finger_table);
 }

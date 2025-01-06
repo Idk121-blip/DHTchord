@@ -4,6 +4,7 @@ use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
 
 use crate::node_state::handlers::event::{net_handler, signal_handler};
+use chrono::{DateTime, Utc};
 use message_io::network::{Endpoint, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
@@ -19,10 +20,11 @@ use tracing::{error, info, trace};
 
 const SAVED_FILES: &str = "saved_files.txt";
 const ID_BYTES: usize = 32;
-const FINGER_TABLE_SIZE: usize = 4;
+const FINGER_TABLE_SIZE: usize = 255;
 
 const MAXIMUM_DURATION: Duration = Duration::from_secs(320);
 
+const HEART_BEAT: Duration = Duration::from_secs(10);
 pub struct NodeState {
     handler: NodeHandler<ServerSignals>,
     listener: NodeListener<ServerSignals>,
@@ -38,7 +40,11 @@ pub struct NodeConfig {
     ///List of successors node
     pub(crate) finger_table: Vec<SocketAddr>,
 
-    pub(crate) finger_table_map: HashMap<SocketAddr, Endpoint>,
+    pub(crate) successors_cache: Vec<SocketAddr>,
+
+    pub(crate) last_modified: DateTime<Utc>,
+
+    pub(crate) known_endpoints: HashMap<SocketAddr, Endpoint>,
 
     pub(crate) predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
@@ -67,7 +73,9 @@ impl NodeState {
             self_addr,
             saved_files,
             finger_table: vec![],
-            finger_table_map: Default::default(),
+            successors_cache: vec![],
+            last_modified: Utc::now(),
+            known_endpoints: Default::default(),
             predecessor: None,
             gossip_interval: Duration::from_secs(5),
         };
@@ -89,13 +97,16 @@ impl NodeState {
             listener,
             mut config,
         } = self;
+
         let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
 
         let serialized = bincode::serialize(&message).unwrap();
 
         let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
 
-        config.finger_table_map.insert(socket_addr, endpoint);
+        config.known_endpoints.insert(socket_addr, endpoint);
+
+        config.last_modified = Utc::now();
 
         while handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
             trace!("Waiting for response...");
@@ -117,10 +128,15 @@ impl NodeState {
         } = self;
 
         info!("start");
+        config.last_modified = Utc::now();
 
         handler
             .signals()
             .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+
+        handler
+            .signals()
+            .send_with_timer(ServerSignals::HeartBeat(), HEART_BEAT);
 
         listener.for_each(move |event| match event {
             NodeEvent::Network(net_event) => net_handler(&handler, &mut config, net_event),

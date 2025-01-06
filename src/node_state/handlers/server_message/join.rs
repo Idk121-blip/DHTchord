@@ -27,7 +27,7 @@ pub fn handle_join(
     let node_id = Sha256::digest(addr.to_string().as_bytes()).to_vec();
     let predecessor = Sha256::digest(config.predecessor.unwrap().to_string().as_bytes()).to_vec(); //todo check the unwrap
 
-    if node_id < config.id && node_id >= predecessor {
+    if node_id < config.id && node_id > predecessor {
         trace!("Inserting between predecessor and self");
         insert_between_self_and_predecessor(handler, config, &endpoint, &addr);
         return;
@@ -35,11 +35,17 @@ pub fn handle_join(
 
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if node_id > config.id && (config.id > successor || node_id <= successor) {
+    if node_id > config.id && (config.id > successor || node_id < successor)
+        || node_id < config.id && (config.id > successor && node_id < successor)
+    {
         trace!("Inserting between self and successor");
         insert_between_self_and_successor(handler, config, &endpoint, &addr);
         return;
     }
+
+    trace!("{:?} {:?} {:?} ", config.id, node_id, successor);
+
+    //sleep(Duration::from_secs(1));
 
     trace!("Starting forwarding process");
 

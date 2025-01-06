@@ -15,9 +15,7 @@ pub fn handle_user_message(
     message: UserMessage,
 ) {
     let send_message = match message {
-        UserMessage::Put(file, user_addr) =>
-            put_user_file(handler, config, file, user_addr)
-        ,
+        UserMessage::Put(file, user_addr) => put_user_file(handler, config, file, user_addr),
         UserMessage::Get(key, user_addr) => get_from_key(handler, config, user_addr, key),
     };
     handler

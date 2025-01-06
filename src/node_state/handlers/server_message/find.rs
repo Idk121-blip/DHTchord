@@ -5,7 +5,12 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::net::SocketAddr;
 
-pub fn find_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, wanted_id: Vec<u8>, searching_address: SocketAddr) {
+pub fn find_handler(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    wanted_id: Vec<u8>,
+    searching_address: SocketAddr,
+) {
     if wanted_id == config.id {
         let searching_endpoint = get_endpoint(handler, config, searching_address);
         handler.signals().send(ServerSignals::ForwardMessage(
@@ -34,9 +39,7 @@ pub fn find_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfi
     //3 cases 1) if we are returning to the "starting" point, 2) if the node doesn't exist
     // 3) if we are restarting the circle (9->0, and we are looking for 10)
     if (config.id > wanted_id
-        && (digested_ip_address_request < wanted_id
-        || wanted_id < digested_address
-        || digested_address < config.id))
+        && (digested_ip_address_request < wanted_id || wanted_id < digested_address || digested_address < config.id))
         || digested_ip_address_request == digested_address
     {
         //not found no need to send a response since it will increase the traffic

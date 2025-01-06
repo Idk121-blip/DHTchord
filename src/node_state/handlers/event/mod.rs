@@ -1,12 +1,10 @@
-use crate::common::{Message, ServerSignals};
+use crate::common::{get_endpoint, ChordMessage, Message, ServerSignals};
 use crate::node_state::handlers::server_message::handle_server_message;
 use crate::node_state::handlers::server_message::stabilization::stabilization_protocol;
 use crate::node_state::handlers::user_message::handle_user_message;
-use crate::node_state::NodeConfig;
-use message_io::network::{Endpoint, NetEvent, SendStatus};
+use crate::node_state::{NodeConfig, HEART_BEAT};
+use message_io::network::{NetEvent, SendStatus};
 use message_io::node::NodeHandler;
-use serde::Serialize;
-use std::net::SocketAddr;
 use tracing::trace;
 
 pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, signal: ServerSignals) {
@@ -17,25 +15,53 @@ pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeCon
             let output_data = bincode::serialize(&message).unwrap();
 
             if handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-                trace!(" Waiting for response {}", endpoint);
-                handler.signals().send(ServerSignals::ForwardMessage(endpoint, message))
+                //trace!(" Waiting for response {}", endpoint);
+                handler.signals().send(ServerSignals::ForwardMessage(endpoint, message));
             }
-
-            //forward_message(&handler, endpoint, message, config.self_addr);
         }
         ServerSignals::SendMessageToUser(endpoint, message) => {
             trace!("Forwarding message to user");
-            forward_message(handler, endpoint, message, config.self_addr);
+
+            let output_data = bincode::serialize(&message).unwrap();
+
+            if handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
+                trace!("Waiting for response {}", endpoint);
+                handler
+                    .signals()
+                    .send(ServerSignals::SendMessageToUser(endpoint, message));
+            }
         }
         ServerSignals::Stabilization() => {
+            trace!("Stabilization");
             stabilization_protocol(handler, config);
+        }
+        ServerSignals::HeartBeat() => {
+            //TODO SEND message with UPD instead of TCP
+            handler
+                .signals()
+                .send_with_timer(ServerSignals::HeartBeat(), HEART_BEAT);
+            if config.predecessor.is_none() {
+                return;
+            }
+
+            let endpoint = get_endpoint(handler, config, config.predecessor.unwrap());
+
+            let successor_address = if config.finger_table.is_empty() {
+                config.self_addr
+            } else {
+                config.finger_table[0]
+            };
+
+            handler.signals().send(ServerSignals::ForwardMessage(
+                endpoint,
+                Message::ChordMessage(ChordMessage::HeartBeat(config.self_addr, successor_address)),
+            ));
         }
     }
 }
 pub fn net_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, net_event: NetEvent) {
     match net_event {
         NetEvent::Message(endpoint, serialized) => {
-            //
             let message = bincode::deserialize(serialized).unwrap();
 
             match message {
@@ -57,18 +83,5 @@ pub fn net_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig
         NetEvent::Disconnected(endpoint) => {
             handler.network().remove(endpoint.resource_id());
         }
-    }
-}
-
-fn forward_message(
-    handler: &NodeHandler<ServerSignals>,
-    endpoint: Endpoint,
-    message: impl Serialize,
-    addr: SocketAddr,
-) {
-    let output_data = bincode::serialize(&message).unwrap();
-
-    while handler.network().send(endpoint, &output_data) == SendStatus::ResourceNotAvailable {
-        trace!("{} Waiting for response {}", addr, endpoint);
     }
 }
