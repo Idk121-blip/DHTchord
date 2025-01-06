@@ -4,6 +4,7 @@ use message_io::network::{Endpoint, Transport};
 use message_io::node::NodeHandler;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
+use std::collections::hash_map::Entry;
 use std::net::SocketAddr;
 
 pub(crate) const SERVER_FOLDER: &str = "server/";
@@ -16,8 +17,6 @@ pub(crate) enum Message {
 
 #[derive(Serialize, Deserialize)]
 pub(crate) enum ChordMessage {
-    SendStringMessage(String, SocketAddr),
-
     NotifySuccessor(SocketAddr),
 
     NotifyPredecessor(SocketAddr),
@@ -97,7 +96,7 @@ pub(crate) fn get_endpoint(
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    if let std::collections::hash_map::Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
+    if let Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
         let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
         e.insert(endpoint);
         endpoint

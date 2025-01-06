@@ -32,6 +32,7 @@ pub fn put_user_file(
     file: common::File,
     user_addr: SocketAddr,
 ) -> ServerToUserMessage {
+    trace!("Received file");
     match handle_user_put(handler, file, config, user_addr) {
         Ok(saved_key) => ServerToUserMessage::SavedKey(saved_key),
         Err(error) => match error {
@@ -50,25 +51,21 @@ fn handle_user_put(
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if (digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
-        || config.id > successor && digested_file_name < successor
-        || config.finger_table.is_empty()
-    {
-        return save_in_server(file, config.self_addr.port(), config).map_or(Err(PutError::ErrorStoringFile), Ok);
+    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor)) && !(config.id > successor && digested_file_name < successor) && !config.finger_table.is_empty() {
+        let forwarding_index = binary_search(config, &digested_file_name);
+
+        let forwarding_endpoint = get_endpoint(handler, config, addr);
+
+        handler.signals().send(ServerSignals::ForwardMessage(
+            forwarding_endpoint,
+            Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
+        ));
+
+        return Err(PutError::ForwardingRequest(
+            config.finger_table[forwarding_index].to_string(),
+        ));
     }
-
-    let forwarding_index = binary_search(config, &digested_file_name);
-
-    let forwarding_endpoint = get_endpoint(handler, config, addr);
-
-    handler.signals().send(ServerSignals::ForwardMessage(
-        forwarding_endpoint,
-        Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
-    ));
-
-    Err(PutError::ForwardingRequest(
-        config.finger_table[forwarding_index].to_string(),
-    ))
+    save_in_server(file, config.self_addr.port(), config).map_or(Err(PutError::ErrorStoringFile), Ok)
 }
 
 pub fn save_in_server(file: common::File, port: u16, config: &mut NodeConfig) -> io::Result<String> {

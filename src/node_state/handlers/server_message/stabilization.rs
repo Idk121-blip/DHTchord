@@ -14,10 +14,10 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
     byte -= index / 8;
     let mut specific_byte = vec[byte] as u16;
 
-    let mut x = 1;
-    x <<= power;
+    let mut shifted_increment = 1;
+    shifted_increment <<= power;
 
-    specific_byte += x;
+    specific_byte += shifted_increment;
     let mut carry;
     if specific_byte > 255 {
         while specific_byte > 255 {
@@ -32,7 +32,7 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
             specific_byte = carry + vec[byte] as u16;
         }
     } else {
-        vec[byte] = (specific_byte % 255) as u8;
+        vec[byte] = specific_byte as u8;
     }
     Ok(vec)
 }
@@ -47,9 +47,7 @@ pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut
 
     let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
     let mut forwarding_index = binary_search(config, &searching);
-
-    let socket_address = config.finger_table[forwarding_index];
-
+    let mut socket_address = config.finger_table[forwarding_index];
     let mut endpoint = get_endpoint(handler, config, socket_address);
 
     handler.signals().send(ServerSignals::ForwardMessage(
@@ -59,9 +57,9 @@ pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut
 
     for i in 0..FINGER_TABLE_SIZE {
         let searching = binary_add(config.id.clone(), i, ID_BYTES).unwrap();
-        let new_forwarding_index = binary_search(config, &searching);
+        forwarding_index = binary_search(config, &searching);
 
-        let socket_address = config.finger_table[new_forwarding_index];
+        socket_address = config.finger_table[forwarding_index];
 
         endpoint = get_endpoint(handler, config, socket_address);
 
@@ -71,7 +69,6 @@ pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut
         ));
     }
 
-    //trace!("{:?}", config.finger_table);
     handler
         .signals()
         .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
