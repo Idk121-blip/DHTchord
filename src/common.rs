@@ -97,16 +97,30 @@ pub(crate) fn binary_search(config: &NodeConfig, digested_vector: &Vec<u8>) -> u
     e
 }
 
-pub(crate) fn get_endpoint(
+pub(crate) fn get_ws_endpoint(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    if let Entry::Vacant(e) = config.known_endpoints.entry(socket_addr) {
+    if let Entry::Vacant(e) = config.known_endpoints_ws.entry(socket_addr) {
         let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
         e.insert(endpoint);
         endpoint
     } else {
-        *config.known_endpoints.get(&socket_addr).unwrap()
+        *config.known_endpoints_ws.get(&socket_addr).unwrap()
+    }
+}
+
+pub(crate) fn get_udp_endpoint(
+    handler: &NodeHandler<ServerSignals>,
+    config: &mut NodeConfig,
+    socket_addr: SocketAddr,
+) -> Endpoint {
+    if let Entry::Vacant(e) = config.known_endpoints_udp.entry(socket_addr) {
+        let (endpoint, _) = handler.network().connect(Transport::Udp, socket_addr).unwrap();
+        e.insert(endpoint);
+        endpoint
+    } else {
+        *config.known_endpoints_ws.get(&socket_addr).unwrap()
     }
 }

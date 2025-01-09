@@ -4,7 +4,7 @@ use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
 
 use crate::node_state::handlers::event::{net_handler, signal_handler};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use message_io::network::{Endpoint, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
@@ -16,7 +16,6 @@ use std::path::Path;
 use std::time::Duration;
 use std::{fs, io};
 use tracing::{error, info, trace};
-//TODO always order finger table, check if it works
 
 const SAVED_FILES: &str = "saved_files.txt";
 const ID_BYTES: usize = 32;
@@ -24,7 +23,9 @@ const FINGER_TABLE_SIZE: usize = 255;
 
 const MAXIMUM_DURATION: Duration = Duration::from_secs(320);
 
-const HEART_BEAT: Duration = Duration::from_secs(10);
+const HEARTBEAT_TIMEOUT: TimeDelta = TimeDelta::seconds(30);
+
+const HEART_BEAT: Duration = Duration::from_secs(5);
 pub struct NodeState {
     handler: NodeHandler<ServerSignals>,
     listener: NodeListener<ServerSignals>,
@@ -44,7 +45,9 @@ pub struct NodeConfig {
 
     pub(crate) last_modified: DateTime<Utc>,
 
-    pub(crate) known_endpoints: HashMap<SocketAddr, Endpoint>,
+    pub(crate) known_endpoints_ws: HashMap<SocketAddr, Endpoint>,
+
+    pub(crate) known_endpoints_udp: HashMap<SocketAddr, Endpoint>,
 
     pub(crate) predecessor: Option<SocketAddr>,
     /// Time interval between gossip rounds.
@@ -75,7 +78,8 @@ impl NodeState {
             finger_table: vec![],
             successors_cache: vec![],
             last_modified: Utc::now(),
-            known_endpoints: Default::default(),
+            known_endpoints_ws: Default::default(),
+            known_endpoints_udp: Default::default(),
             predecessor: None,
             gossip_interval: Duration::from_secs(5),
         };
@@ -104,7 +108,7 @@ impl NodeState {
 
         let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
 
-        config.known_endpoints.insert(socket_addr, endpoint);
+        config.known_endpoints_ws.insert(socket_addr, endpoint);
 
         config.last_modified = Utc::now();
 

@@ -1,6 +1,6 @@
 use crate::common;
 use crate::common::{
-    binary_search, get_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER,
+    binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals, ServerToUserMessage, SERVER_FOLDER,
 };
 use crate::errors::PutError;
 use crate::node_state::{NodeConfig, SAVED_FILES};
@@ -21,7 +21,7 @@ pub fn handle_forwarded_put(
     addr: SocketAddr,
     file: common::File,
 ) {
-    let endpoint = get_endpoint(handler, config, addr);
+    let endpoint = get_ws_endpoint(handler, config, addr);
     let message = ServerSignals::SendMessageToUser(endpoint, put_user_file(handler, config, file, addr));
     handler.signals().send(message);
 }
@@ -57,7 +57,7 @@ fn handle_user_put(
     {
         let forwarding_index = binary_search(config, &digested_file_name);
 
-        let forwarding_endpoint = get_endpoint(handler, config, addr);
+        let forwarding_endpoint = get_ws_endpoint(handler, config, addr);
 
         handler.signals().send(ServerSignals::ForwardMessage(
             forwarding_endpoint,

@@ -1,4 +1,4 @@
-use crate::common::{get_endpoint, ChordMessage, Message, ServerSignals};
+use crate::common::{get_udp_endpoint, ChordMessage, Message, ServerSignals};
 use crate::node_state::handlers::server_message::handle_server_message;
 use crate::node_state::handlers::server_message::stabilization::stabilization_protocol;
 use crate::node_state::handlers::user_message::handle_user_message;
@@ -36,7 +36,6 @@ pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeCon
             stabilization_protocol(handler, config);
         }
         ServerSignals::HeartBeat() => {
-            //TODO SEND message with UPD instead of TCP
             handler
                 .signals()
                 .send_with_timer(ServerSignals::HeartBeat(), HEART_BEAT);
@@ -44,7 +43,7 @@ pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeCon
                 return;
             }
 
-            let endpoint = get_endpoint(handler, config, config.predecessor.unwrap());
+            let endpoint = get_udp_endpoint(handler, config, config.predecessor.unwrap());
 
             let successor_address = if config.finger_table.is_empty() {
                 config.self_addr

@@ -1,4 +1,4 @@
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals};
+use crate::common::{binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals};
 use crate::node_state::NodeConfig;
 use digest::Digest;
 use message_io::node::NodeHandler;
@@ -12,7 +12,7 @@ pub fn find_handler(
     searching_address: SocketAddr,
 ) {
     if wanted_id == config.id {
-        let searching_endpoint = get_endpoint(handler, config, searching_address);
+        let searching_endpoint = get_ws_endpoint(handler, config, searching_address);
         handler.signals().send(ServerSignals::ForwardMessage(
             searching_endpoint,
             Message::ChordMessage(ChordMessage::NotifyPresence(config.self_addr)),
@@ -26,7 +26,7 @@ pub fn find_handler(
 
     if digested_address == wanted_id {
         //iterative way
-        let searching_endpoint = get_endpoint(handler, config, searching_address);
+        let searching_endpoint = get_ws_endpoint(handler, config, searching_address);
         handler.signals().send(ServerSignals::ForwardMessage(
             searching_endpoint,
             Message::ChordMessage(ChordMessage::NotifyPresence(config.finger_table[index])),
@@ -48,7 +48,7 @@ pub fn find_handler(
 
     let forwarding_address = config.finger_table[index];
 
-    let forwarding_endpoint = get_endpoint(handler, config, forwarding_address);
+    let forwarding_endpoint = get_ws_endpoint(handler, config, forwarding_address);
 
     handler.signals().send(ServerSignals::ForwardMessage(
         forwarding_endpoint,

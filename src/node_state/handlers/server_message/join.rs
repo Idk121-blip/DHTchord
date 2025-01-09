@@ -25,7 +25,16 @@ pub fn handle_join(
     }
 
     let node_id = Sha256::digest(addr.to_string().as_bytes()).to_vec();
-    let predecessor = Sha256::digest(config.predecessor.unwrap().to_string().as_bytes()).to_vec(); //todo check the unwrap
+    let predecessor = if config.predecessor.is_none() {
+        Sha256::digest(
+            config.finger_table[config.finger_table.len() - 1]
+                .to_string()
+                .as_bytes(),
+        )
+        .to_vec()
+    } else {
+        Sha256::digest(config.predecessor.unwrap().to_string().as_bytes()).to_vec()
+    };
 
     if node_id < config.id && node_id > predecessor {
         trace!("Inserting between predecessor and self");
@@ -78,12 +87,13 @@ fn insert_between_self_and_predecessor(
     addr: &SocketAddr,
 ) {
     let add_successor_message = Message::ChordMessage(ChordMessage::AddSuccessor(config.self_addr));
-    let serialized = bincode::serialize(&add_successor_message).unwrap();
-
-    handler.network().send(*endpoint, &serialized); //todo check status
+    handler
+        .signals()
+        .send(ServerSignals::ForwardMessage(*endpoint, add_successor_message));
     let add_predecessor_message = Message::ChordMessage(ChordMessage::AddPredecessor(config.predecessor.unwrap()));
-    let serialized = bincode::serialize(&add_predecessor_message).unwrap();
-    handler.network().send(*endpoint, &serialized); //todo check status
+    handler
+        .signals()
+        .send(ServerSignals::ForwardMessage(*endpoint, add_predecessor_message));
     config.predecessor = Some(*addr);
     trace!("join successfully");
 }
@@ -94,7 +104,11 @@ fn insert_between_self_and_successor(
     endpoint: &Endpoint,
     addr: &SocketAddr,
 ) {
-    //todo save in cache the successor 4 security reason
+    config.successors_cache.insert(0, config.finger_table[0]);
+    while config.successors_cache.len() > 5 {
+        config.successors_cache.remove(config.successors_cache.len() - 1);
+    }
+
     let add_predecessor_message = Message::ChordMessage(ChordMessage::AddPredecessor(config.self_addr));
     let serialized = bincode::serialize(&add_predecessor_message).unwrap();
     handler.network().send(*endpoint, &serialized);

@@ -1,5 +1,6 @@
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals};
-use crate::node_state::{NodeConfig, FINGER_TABLE_SIZE, ID_BYTES, MAXIMUM_DURATION};
+use crate::common::{binary_search, get_udp_endpoint, get_ws_endpoint, ChordMessage, Message, ServerSignals};
+use crate::node_state::{NodeConfig, FINGER_TABLE_SIZE, HEARTBEAT_TIMEOUT, ID_BYTES, MAXIMUM_DURATION};
+use chrono::Utc;
 use message_io::node::NodeHandler;
 use std::ops::Mul;
 use tracing::trace;
@@ -39,13 +40,52 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
 
 pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
     check_successor(handler, config);
-
+    heart_beat(handler, config);
     update_finger_table(handler, config);
 }
 
 fn check_successor(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
-    todo!(); // todo implement
-    let _endpoint = get_endpoint(handler, config, config.finger_table[0]);
+    let now = Utc::now();
+    if config.finger_table.is_empty() {
+        return;
+    }
+    if now.signed_duration_since(config.last_modified) > HEARTBEAT_TIMEOUT {
+        if config.successors_cache.is_empty() {
+            return;
+        }
+        while !config.successors_cache.is_empty() {
+            if config.finger_table[0] != config.successors_cache[0] {
+                config.finger_table[0] = config.successors_cache[0];
+                if config.finger_table.len() > 1 && config.finger_table[0] == config.finger_table[1] {
+                    config.finger_table.remove(1);
+                }
+            }
+            config.successors_cache.remove(0);
+        }
+        let endpoint = get_ws_endpoint(handler, config, config.finger_table[0]);
+        handler.signals().send(ServerSignals::ForwardMessage(
+            endpoint,
+            Message::ChordMessage(ChordMessage::NotifySuccessor(config.self_addr)),
+        ));
+    }
+}
+
+fn heart_beat(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
+    if config.predecessor.is_none() {
+        return;
+    }
+
+    let endpoint = get_udp_endpoint(handler, config, config.predecessor.unwrap());
+
+    let successor = if config.finger_table.is_empty() {
+        config.self_addr
+    } else {
+        config.finger_table[0]
+    };
+
+    let message = Message::ChordMessage(ChordMessage::HeartBeat(config.self_addr, successor));
+
+    handler.signals().send(ServerSignals::ForwardMessage(endpoint, message));
 }
 
 fn update_finger_table(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
@@ -63,7 +103,7 @@ fn update_finger_table(handler: &NodeHandler<ServerSignals>, config: &mut NodeCo
     let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
     let mut forwarding_index = binary_search(config, &searching);
     let mut socket_address = config.finger_table[forwarding_index];
-    let mut endpoint = get_endpoint(handler, config, socket_address);
+    let mut endpoint = get_ws_endpoint(handler, config, socket_address);
 
     handler.signals().send(ServerSignals::ForwardMessage(
         endpoint,
@@ -76,7 +116,7 @@ fn update_finger_table(handler: &NodeHandler<ServerSignals>, config: &mut NodeCo
 
         socket_address = config.finger_table[forwarding_index];
 
-        endpoint = get_endpoint(handler, config, socket_address);
+        endpoint = get_ws_endpoint(handler, config, socket_address);
 
         handler.signals().send(ServerSignals::ForwardMessage(
             endpoint,

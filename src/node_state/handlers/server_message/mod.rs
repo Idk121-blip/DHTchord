@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals, SERVER_FOLDER};
+use crate::common::{binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals, SERVER_FOLDER};
 use crate::node_state::handlers::server_message::find::find_handler;
 use crate::node_state::handlers::user_message::get::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::handlers::user_message::put::{handle_forwarded_put, save_in_server};
@@ -12,7 +12,6 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::fs;
 use std::net::SocketAddr;
-use std::time::Duration;
 use tracing::trace;
 
 mod find;
@@ -29,7 +28,7 @@ pub fn handle_server_message(
         ChordMessage::AddPredecessor(predecessor) => {
             config.predecessor = Some(predecessor);
 
-            let forwarding_endpoint = get_endpoint(handler, config, predecessor);
+            let forwarding_endpoint = get_ws_endpoint(handler, config, predecessor);
 
             if forwarding_endpoint.addr() != endpoint.addr() {
                 handler.signals().send(ServerSignals::ForwardMessage(
@@ -51,7 +50,7 @@ pub fn handle_server_message(
             config.finger_table.insert(0, successor);
             move_files(handler, config, successor, &endpoint);
 
-            let forwarding_endpoint = get_endpoint(handler, config, successor);
+            let forwarding_endpoint = get_ws_endpoint(handler, config, successor);
             config.last_modified = Utc::now();
 
             if forwarding_endpoint.addr() == endpoint.addr() {
@@ -68,7 +67,7 @@ pub fn handle_server_message(
         ChordMessage::ForwardedJoin(addr) => {
             trace!("Forwarded join, joining {addr}");
 
-            let new_endpoint = get_endpoint(handler, config, addr);
+            let new_endpoint = get_ws_endpoint(handler, config, addr);
             let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
             handler
                 .signals()
@@ -147,15 +146,13 @@ fn move_files(
 ) {
     let digested_addr = Sha256::digest(new_node_addr.to_string().as_bytes()).to_vec();
 
-    let forward_endpoint = get_endpoint(handler, config, new_node_addr);
+    let forward_endpoint = get_ws_endpoint(handler, config, new_node_addr);
 
     trace!("{} {}", endpoint.addr(), forward_endpoint.addr());
 
     for (key, file_name) in &config.saved_files {
         let digested_key = hex::decode(key).unwrap();
         if digested_key > digested_addr {
-            //todo move the file that is saved
-
             let file_path = SERVER_FOLDER.to_string() + config.self_addr.port().to_string().as_str() + "/" + key;
             let buffer = get_file_bytes(file_path.clone());
             handler.signals().send(ServerSignals::ForwardMessage(
