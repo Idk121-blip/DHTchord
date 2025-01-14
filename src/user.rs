@@ -51,7 +51,7 @@ impl User {
                 let server_to_user_message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
                 match server_to_user_message {
                     ServerToUserMessage::SavedKey(key) => {
-                        trace!("Ok response from server, killing myself");
+                        trace!("Ok response from server, stopping myself");
                         *response_clone.lock().unwrap() = Ok(key);
                         handler.stop();
                     }
