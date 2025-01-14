@@ -3,7 +3,7 @@ mod handlers;
 use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
 
-use crate::node_state::handlers::event::{net_handler, signal_handler};
+use crate::node_state::handlers::event::{handle_net_event, handle_server_signal};
 use message_io::network::{Endpoint, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
@@ -123,8 +123,8 @@ impl NodeState {
             .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
 
         listener.for_each(move |event| match event {
-            NodeEvent::Network(net_event) => net_handler(&handler, &mut config, net_event),
-            NodeEvent::Signal(signal) => signal_handler(&handler, &mut config, signal),
+            NodeEvent::Network(event) => handle_net_event(&handler, &mut config, event),
+            NodeEvent::Signal(signal) => handle_server_signal(&handler, &mut config, signal),
         });
     }
 }
