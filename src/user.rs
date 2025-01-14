@@ -6,7 +6,6 @@ use message_io::node::{NodeHandler, NodeListener};
 use oneshot::Sender;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
 use tracing::trace;
 
 pub struct User {
@@ -40,11 +39,9 @@ impl User {
         let serialized = bincode::serialize(&message).unwrap();
         handler.network().send(endpoint, &serialized);
 
-        let response = Arc::new(Mutex::new(Err(())));
+        let mut response = Err(()); // FIXME: () does not convey any meaning!
 
-        let response_clone = Arc::clone(&response);
-
-        listener.for_each(move |event| match event.network() {
+        listener.for_each(|event| match event.network() {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
@@ -52,7 +49,7 @@ impl User {
                 match server_to_user_message {
                     ServerToUserMessage::SavedKey(key) => {
                         trace!("Ok response from server, stopping myself");
-                        *response_clone.lock().unwrap() = Ok(key);
+                        response = Ok(key);
                         handler.stop();
                     }
                     ServerToUserMessage::ForwarderTo(_) => {
@@ -61,7 +58,7 @@ impl User {
                     }
                     ServerToUserMessage::InternalServerError => {
                         trace!("Error returned from serve");
-                        *response_clone.lock().unwrap() = Err(());
+                        response = Err(());
                         handler.stop();
                     }
                     _ => {
@@ -71,8 +68,8 @@ impl User {
             }
             NetEvent::Disconnected(_) => {}
         });
-        let final_response = response.lock().unwrap().clone();
-        sender.send(final_response).unwrap();
+
+        sender.send(response).unwrap();
     }
 
     pub fn get(self, server_address: &str, sender: Sender<Result<File, ()>>, key: String) {
@@ -87,11 +84,9 @@ impl User {
         let serialized = bincode::serialize(&message).unwrap();
         handler.network().send(endpoint, &serialized);
 
-        let response = Arc::new(Mutex::new(Err(())));
+        let mut response = Err(()); // FIXME: () does not convey any meaning!
 
-        let response_clone = Arc::clone(&response);
-
-        listener.for_each(move |event| match event.network() {
+        listener.for_each(|event| match event.network() {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
@@ -101,7 +96,7 @@ impl User {
                 match server_to_user_message {
                     ServerToUserMessage::RequestedFile(file) => {
                         trace!("File received");
-                        *response_clone.lock().unwrap() = Ok(file);
+                        response = Ok(file);
                         handler.stop();
                     }
                     ServerToUserMessage::ForwarderTo(_) => {
@@ -110,17 +105,17 @@ impl User {
                     ServerToUserMessage::FileNotFound(_hex) => {
                         trace!("Not found");
 
-                        *response_clone.lock().unwrap() = Err(());
+                        response = Err(());
                         handler.stop();
                     }
                     ServerToUserMessage::HexConversionNotValid(_) => {
                         trace!("hex conversion error");
-                        *response_clone.lock().unwrap() = Err(());
+                        response = Err(());
                         handler.stop();
                     }
                     ServerToUserMessage::InternalServerError => {
                         trace!("Internal error while saving file");
-                        *response_clone.lock().unwrap() = Err(());
+                        response = Err(());
                         handler.stop();
                     }
                     _ => {}
@@ -129,7 +124,6 @@ impl User {
             NetEvent::Disconnected(_) => {}
         });
 
-        let final_response = response.lock().unwrap().clone();
-        sender.send(final_response).unwrap();
+        sender.send(response).unwrap();
     }
 }
