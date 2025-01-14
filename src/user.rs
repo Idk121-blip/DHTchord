@@ -34,11 +34,11 @@ impl User {
             listener,
             listening_addr,
         } = self;
-        let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
-        handler.network().send(
-            ep,
-            &bincode::serialize(&Message::UserMessage(Put(file, listening_addr))).unwrap(),
-        );
+        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
+
+        let message = Message::UserMessage(Put(file, listening_addr));
+        let serialized = bincode::serialize(&message).unwrap();
+        handler.network().send(endpoint, &serialized);
 
         let response = Arc::new(Mutex::new(Err(())));
 
@@ -81,11 +81,11 @@ impl User {
             listener,
             listening_addr,
         } = self;
-        let (ep, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
-        handler.network().send(
-            ep,
-            &bincode::serialize(&Message::UserMessage(Get(key, listening_addr))).unwrap(),
-        );
+        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
+
+        let message = Message::UserMessage(Get(key, listening_addr));
+        let serialized = bincode::serialize(&message).unwrap();
+        handler.network().send(endpoint, &serialized);
 
         let response = Arc::new(Mutex::new(Err(())));
 
