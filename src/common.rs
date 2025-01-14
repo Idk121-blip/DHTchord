@@ -5,6 +5,7 @@ use message_io::node::NodeHandler;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::hash_map::Entry;
+use std::fmt::{Debug, Formatter};
 use std::net::SocketAddr;
 
 pub(crate) const SERVER_FOLDER: &str = "server/";
@@ -50,6 +51,19 @@ pub(crate) enum ServerToUserMessage {
     FileNotFound(String),
     HexConversionNotValid(String),
     InternalServerError,
+}
+
+impl Debug for ServerToUserMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RequestedFile(_) => f.write_str("ServerToUserMessage(RequestedFile)"),
+            Self::SavedKey(_) => f.write_str("ServerToUserMessage(SavedKey)"),
+            Self::ForwarderTo(_) => f.write_str("ServerToUserMessage(ForwarderTo)"),
+            Self::FileNotFound(_) => f.write_str("ServerToUserMessage(FileNotFound)"),
+            Self::HexConversionNotValid(_) => f.write_str("ServerToUserMessage(HexConversionNotValid)"),
+            Self::InternalServerError => f.write_str("ServerToUserMessage(InternalServerError)"),
+        }
+    }
 }
 
 pub(crate) enum ServerSignals {
