@@ -61,9 +61,7 @@ impl User {
                         response = Err(());
                         handler.stop();
                     }
-                    _ => {
-                        trace!("Shouldn't arrive here");
-                    }
+                    other => panic!("received unexpected message: {:?}", other),
                 }
             }
             NetEvent::Disconnected(_) => {}
@@ -118,7 +116,7 @@ impl User {
                         response = Err(());
                         handler.stop();
                     }
-                    _ => {}
+                    other => panic!("received unexpected message: {:?}", other),
                 }
             }
             NetEvent::Disconnected(_) => {}
