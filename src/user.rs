@@ -58,7 +58,7 @@ impl User {
                     }
                     ServerToUserMessage::InternalServerError => {
                         trace!("Error returned from serve");
-                        response = Err(());
+                        response = Err(()); // FIXME: () does not convey any meaning!
                         handler.stop();
                     }
                     other => panic!("received unexpected message: {:?}", other),
@@ -103,17 +103,17 @@ impl User {
                     ServerToUserMessage::FileNotFound(_hex) => {
                         trace!("Not found");
 
-                        response = Err(());
+                        response = Err(()); // FIXME: () does not convey any meaning!
                         handler.stop();
                     }
                     ServerToUserMessage::HexConversionNotValid(_) => {
                         trace!("hex conversion error");
-                        response = Err(());
+                        response = Err(()); // FIXME: () does not convey any meaning!
                         handler.stop();
                     }
                     ServerToUserMessage::InternalServerError => {
                         trace!("Internal error while saving file");
-                        response = Err(());
+                        response = Err(()); // FIXME: () does not convey any meaning!
                         handler.stop();
                     }
                     other => panic!("received unexpected message: {:?}", other),
