@@ -5,7 +5,7 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::net::SocketAddr;
 
-pub fn find_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, wanted_id: Vec<u8>, searching_address: SocketAddr) {
+pub fn handle_find(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, wanted_id: Vec<u8>, searching_address: SocketAddr) {
     if wanted_id == config.id {
         let searching_endpoint = get_endpoint(handler, config, searching_address);
         handler.signals().send(ServerSignals::ForwardMessage(
