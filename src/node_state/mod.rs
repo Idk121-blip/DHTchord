@@ -83,48 +83,32 @@ impl NodeState {
         self.config.id = new_test_id;
     }
 
-    pub fn connect_and_run(self, socket_addr: SocketAddr) {
-        let Self {
-            handler,
-            listener,
-            mut config,
-        } = self;
-        let message = Message::ChordMessage(ChordMessage::Join(config.self_addr));
+    pub fn connect_and_run(mut self, socket_addr: SocketAddr) {
+        let message = Message::ChordMessage(ChordMessage::Join(self.config.self_addr));
 
         let serialized = bincode::serialize(&message).unwrap();
 
-        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
+        let (endpoint, _) = self.handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
 
-        config.finger_table_map.insert(socket_addr, endpoint);
+        self.config.finger_table_map.insert(socket_addr, endpoint);
 
-        while handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
+        while self.handler.network().send(endpoint, &serialized) == SendStatus::ResourceNotAvailable {
             trace!("Waiting for response...");
         }
 
-        Self {
-            handler,
-            listener,
-            config,
-        }
-        .run();
+        self.run();
     }
 
-    pub fn run(self) {
-        let Self {
-            handler,
-            listener,
-            mut config,
-        } = self;
-
+    pub fn run(mut self) {
         info!("start");
 
-        handler
+        self.handler
             .signals()
-            .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+            .send_with_timer(ServerSignals::Stabilization(), self.config.gossip_interval);
 
-        listener.for_each(move |event| match event {
-            NodeEvent::Network(event) => handle_net_event(&handler, &mut config, event),
-            NodeEvent::Signal(signal) => handle_server_signal(&handler, &mut config, signal),
+        self.listener.for_each(move |event| match event {
+            NodeEvent::Network(event) => handle_net_event(&self.handler, &mut self.config, event),
+            NodeEvent::Signal(signal) => handle_server_signal(&self.handler, &mut self.config, signal),
         });
     }
 }

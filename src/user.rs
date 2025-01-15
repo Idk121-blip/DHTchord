@@ -28,20 +28,19 @@ impl User {
     }
 
     pub fn put(self, server_address: &str, sender: Sender<Result<String, ()>>, file: File) {
-        let Self {
-            handler,
-            listener,
-            listening_addr,
-        } = self;
-        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
+        let (endpoint, _) = self
+            .handler
+            .network()
+            .connect_sync(Transport::Ws, server_address)
+            .unwrap();
 
-        let message = Message::UserMessage(Put(file, listening_addr));
+        let message = Message::UserMessage(Put(file, self.listening_addr));
         let serialized = bincode::serialize(&message).unwrap();
-        handler.network().send(endpoint, &serialized);
+        self.handler.network().send(endpoint, &serialized);
 
         let mut response = Err(()); // FIXME: () does not convey any meaning!
 
-        listener.for_each(|event| match event.network() {
+        self.listener.for_each(|event| match event.network() {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
@@ -50,7 +49,7 @@ impl User {
                     ServerToUserMessage::SavedKey(key) => {
                         trace!("Ok response from server, stopping myself");
                         response = Ok(key);
-                        handler.stop();
+                        self.handler.stop();
                     }
                     ServerToUserMessage::ForwarderTo(_) => {
                         trace!("forwarder");
@@ -59,7 +58,7 @@ impl User {
                     ServerToUserMessage::InternalServerError => {
                         trace!("Error returned from serve");
                         response = Err(()); // FIXME: () does not convey any meaning!
-                        handler.stop();
+                        self.handler.stop();
                     }
                     other => panic!("received unexpected message: {:?}", other),
                 }
@@ -71,20 +70,19 @@ impl User {
     }
 
     pub fn get(self, server_address: &str, sender: Sender<Result<File, ()>>, key: String) {
-        let Self {
-            handler,
-            listener,
-            listening_addr,
-        } = self;
-        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, server_address).unwrap();
+        let (endpoint, _) = self
+            .handler
+            .network()
+            .connect_sync(Transport::Ws, server_address)
+            .unwrap();
 
-        let message = Message::UserMessage(Get(key, listening_addr));
+        let message = Message::UserMessage(Get(key, self.listening_addr));
         let serialized = bincode::serialize(&message).unwrap();
-        handler.network().send(endpoint, &serialized);
+        self.handler.network().send(endpoint, &serialized);
 
         let mut response = Err(()); // FIXME: () does not convey any meaning!
 
-        listener.for_each(|event| match event.network() {
+        self.listener.for_each(|event| match event.network() {
             NetEvent::Connected(_, _) => {}
             NetEvent::Accepted(_, _) => {}
             NetEvent::Message(_, bytes) => {
@@ -95,7 +93,7 @@ impl User {
                     ServerToUserMessage::RequestedFile(file) => {
                         trace!("File received");
                         response = Ok(file);
-                        handler.stop();
+                        self.handler.stop();
                     }
                     ServerToUserMessage::ForwarderTo(_) => {
                         trace!("Forwarded")
@@ -104,17 +102,17 @@ impl User {
                         trace!("Not found");
 
                         response = Err(()); // FIXME: () does not convey any meaning!
-                        handler.stop();
+                        self.handler.stop();
                     }
                     ServerToUserMessage::HexConversionNotValid(_) => {
                         trace!("hex conversion error");
                         response = Err(()); // FIXME: () does not convey any meaning!
-                        handler.stop();
+                        self.handler.stop();
                     }
                     ServerToUserMessage::InternalServerError => {
                         trace!("Internal error while saving file");
                         response = Err(()); // FIXME: () does not convey any meaning!
-                        handler.stop();
+                        self.handler.stop();
                     }
                     other => panic!("received unexpected message: {:?}", other),
                 }
