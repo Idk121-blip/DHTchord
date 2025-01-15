@@ -110,11 +110,11 @@ pub(crate) fn get_endpoint(
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    if let Entry::Vacant(e) = config.finger_table_map.entry(socket_addr) {
-        let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
-        e.insert(endpoint);
-        endpoint
-    } else {
-        *config.finger_table_map.get(&socket_addr).unwrap()
+    match config.finger_table_map.entry(socket_addr) {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
+            *entry.insert(endpoint)
+        }
     }
 }
