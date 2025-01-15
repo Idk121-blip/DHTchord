@@ -14,13 +14,10 @@ pub fn handle_user_message(
     endpoint: Endpoint,
     message: UserMessage,
 ) {
-    let send_message = match message {
-        UserMessage::Put(file, user_addr) =>
-            put_user_file(handler, config, file, user_addr)
-        ,
+    let message_to_send = match message {
+        UserMessage::Put(file, user_addr) => put_user_file(handler, config, file, user_addr),
         UserMessage::Get(key, user_addr) => get_from_key(handler, config, user_addr, key),
     };
-    handler
-        .network()
-        .send(endpoint, &bincode::serialize(&send_message).unwrap());
+    let serialized = bincode::serialize(&message_to_send).unwrap();
+    handler.network().send(endpoint, &serialized);
 }
