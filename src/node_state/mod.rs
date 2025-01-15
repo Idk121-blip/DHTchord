@@ -46,6 +46,46 @@ pub struct NodeConfig {
 }
 
 impl NodeState {
+    /// Creates a new instance of the struct, initializing the network handler, listener, and node configuration.
+    ///
+    /// This function performs the following operations:
+    /// 1. Initializes a network handler and a listener by calling `node::split()`.
+    /// 2. Configures the handler to listen for WebSocket (`Ws`) and UDP (`Udp`) connections on the specified address and port.
+    /// 3. Calculates a unique identifier for the node based on the `SocketAddr` (IP and port) using a SHA-256 hash.
+    /// 4. Ensures the folder structure for storing saved files exists, creating it if necessary.
+    /// 5. Loads previously saved files from the storage folder, or initializes an empty list if no saved files are found.
+    /// 6. Constructs the node configuration, including the finger table and other parameters, and initializes the struct.
+    ///
+    /// # Parameters
+    /// - `ip`: An `IpAddr` (e.g., `Ipv4Addr` or `Ipv6Addr`) representing the IP address where the node will listen for incoming connections.
+    /// - `port`: A `u16` representing the port number where the node will listen for incoming connections.
+    ///
+    /// # Returns
+    /// - `Ok(Self)`: Returns an instance of the struct if the initialization is successful.
+    /// - `Err(io::Error)`: Returns an I/O error if the handler fails to bind to the specified address and port.
+    ///
+    ///
+    ///
+    /// # Example
+    /// ```rust
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// use std::io;
+    ///
+    ///     use DHTchord::node_state::{NodeConfig, NodeState};
+    /// let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    ///     let port = 8080;
+    ///
+    ///     let node = NodeState::new(ip, port)?;
+    /// ```
+    ///
+    ///
+    /// # Key Components in the Configuration
+    /// - `id`: A unique identifier for the node, calculated using SHA-256 of the node's address.
+    /// - `self_addr`: The address (`SocketAddr`) where the node is listening.
+    /// - `saved_files`: A collection of files loaded from the storage folder, used for file management.
+    /// - `finger_table`: An empty vector representing the initial finger table for the node (used in distributed systems like Chord).
+    /// - `gossip_interval`: The interval for gossip-based communication, set to 5 seconds.
+
     pub fn new(ip: IpAddr, port: u16) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
         let self_addr = SocketAddr::new(ip, port);
@@ -79,10 +119,28 @@ impl NodeState {
         })
     }
 
-    pub fn personalized_id_test(&mut self, new_test_id: Vec<u8>) {
-        self.config.id = new_test_id;
-    }
-
+    /// Connects to a remote node in the Chord network and starts the main event loop for the node.
+    ///
+    /// # Parameters
+    /// - `self`: Consumes the instance of the struct to perform the connection and event loop. This ensures the instance cannot be reused afterward.
+    /// - `socket_addr`: A `SocketAddr` representing the address of the remote node to connect to.
+    ///
+    ///
+    /// # Example
+    /// ```rust
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    /// use DHTchord::node_state::NodeState;
+    ///
+    /// let node = NodeState::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080).unwrap();
+    /// let remote_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 8080);
+    /// node.connect_and_run(remote_addr);
+    ///
+    /// ```
+    ///
+    /// # Notes
+    /// - The `self.run()` call at the end of the function starts the node's main event loop. Ensure that the `run` method is implemented to handle the Chord protocol's core logic.
+    /// - The `finger_table_map` is updated with the remote node's address and endpoint, facilitating routing and communication within the Chord network.
+    ///
     pub fn connect_and_run(mut self, socket_addr: SocketAddr) {
         let message = Message::ChordMessage(ChordMessage::Join(self.config.self_addr));
 
@@ -99,6 +157,29 @@ impl NodeState {
         self.run();
     }
 
+    /// Starts the main event loop for the node, handling network events and periodic stabilization tasks.
+    ///
+    /// # Parameters
+    /// - `self`: Consumes the struct instance to initiate the event loop. The instance is no longer accessible after this call.
+    ///
+    /// # Behavior
+    /// - **Signal Management:** A stabilization signal is scheduled at regular intervals defined by `self.config.gossip_interval`.
+    /// - **Event Processing:** Listens indefinitely for events, ensuring that the node remains active in the Chord network and responds to network or scheduled events.
+    /// - **Handlers:** Delegates event-specific logic to:
+    ///   - `handle_net_event` for network-related tasks.
+    ///   - `handle_server_signal` for signal-related tasks.
+    ///
+    /// # Example
+    /// ```rust
+    /// use std::net::{IpAddr, Ipv4Addr};
+    /// use DHTchord::node_state::NodeState;
+    /// let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+    /// let port = 8080;
+    ///
+    /// let node = NodeState::new(ip, port).unwrap();
+    /// node.run();
+    ///
+    /// ```
     pub fn run(mut self) {
         info!("start");
 
@@ -119,6 +200,9 @@ fn saved_file_folder_exist(port: u16) -> bool {
 
 ///function to save the hashmap of key-file name
 fn create_saved_file_folder(port: u16) -> io::Result<()> {
+    if !Path::new(SERVER_FOLDER).exists() {
+        fs::create_dir(SERVER_FOLDER)?;
+    }
     let folder_name = SERVER_FOLDER.to_string() + port.to_string().as_str() + "/";
 
     if !Path::new(&folder_name).exists() {

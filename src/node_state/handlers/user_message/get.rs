@@ -56,7 +56,10 @@ fn handle_user_get(
     let digested_file_name = hex::decode(key.clone()).unwrap();
     let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor)) && !(config.id > successor && digested_file_name < successor) && !config.finger_table.is_empty() {
+    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+        && !(config.id > successor && digested_file_name < successor)
+        && !config.finger_table.is_empty()
+    {
         let forwarding_index = binary_search(config, &digested_file_name); // todo check code duplication with put
         let forwarding_address = config.finger_table[forwarding_index];
 

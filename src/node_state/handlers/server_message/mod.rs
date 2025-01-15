@@ -13,9 +13,9 @@ use std::fs;
 use std::net::SocketAddr;
 use tracing::trace;
 
+mod find;
 pub mod join;
 pub mod stabilization;
-mod find;
 
 pub fn handle_server_message(
     handler: &NodeHandler<ServerSignals>,
