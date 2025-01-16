@@ -27,7 +27,7 @@ impl User {
         })
     }
 
-    pub fn put(self, server_address: &str, sender: Sender<Result<String, ()>>, file: File) {
+    pub fn put(self, server_address: &str, file: File) -> Result<String, ()> {
         let (endpoint, _) = self
             .handler
             .network()
@@ -66,10 +66,10 @@ impl User {
             NetEvent::Disconnected(_) => {}
         });
 
-        sender.send(response).unwrap();
+        response
     }
 
-    pub fn get(self, server_address: &str, sender: Sender<Result<File, ()>>, key: String) {
+    pub fn get(self, server_address: &str, key: String) -> Result<File, ()> {
         let (endpoint, _) = self
             .handler
             .network()
@@ -120,6 +120,6 @@ impl User {
             NetEvent::Disconnected(_) => {}
         });
 
-        sender.send(response).unwrap();
+        response
     }
 }
