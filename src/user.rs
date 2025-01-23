@@ -6,7 +6,6 @@ use crate::errors::{GetError, PutError};
 use message_io::network::{NetEvent, Transport};
 use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
-use oneshot::Sender;
 use std::io;
 use std::net::SocketAddr;
 use tracing::trace;

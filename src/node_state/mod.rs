@@ -2,10 +2,8 @@ mod handlers;
 
 use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
-
-use crate::node_state::handlers::event::{net_handler, signal_handler};
-use chrono::{DateTime, TimeDelta, Utc};
 use crate::node_state::handlers::event::{handle_net_event, handle_server_signal};
+use chrono::{DateTime, TimeDelta, Utc};
 use message_io::network::{Endpoint, SendStatus, Transport};
 use message_io::node::{self, NodeEvent, NodeHandler, NodeListener};
 use sha2::{Digest, Sha256};
@@ -159,7 +157,7 @@ impl NodeState {
 
         let serialized = bincode::serialize(&message).unwrap();
 
-        let (endpoint, _) = handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
+        let (endpoint, _) = self.handler.network().connect_sync(Transport::Ws, socket_addr).unwrap();
 
         self.config.known_endpoints_ws.insert(socket_addr, endpoint);
 
@@ -200,7 +198,7 @@ impl NodeState {
 
         self.handler
             .signals()
-            .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
+            .send_with_timer(ServerSignals::Stabilization(), self.config.gossip_interval);
 
         self.handler
             .signals()

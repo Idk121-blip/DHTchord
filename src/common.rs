@@ -116,12 +116,12 @@ pub(crate) fn get_ws_endpoint(
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    if let Entry::Vacant(e) = config.known_endpoints_ws.entry(socket_addr) {
-        let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
-        e.insert(endpoint);
-        endpoint
-    } else {
-        *config.known_endpoints_ws.get(&socket_addr).unwrap()
+    match config.known_endpoints_ws.entry(socket_addr) {
+        Entry::Occupied(entry) => *entry.get(),
+        Entry::Vacant(entry) => {
+            let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
+            *entry.insert(endpoint)
+        }
     }
 }
 
@@ -130,10 +130,10 @@ pub(crate) fn get_udp_endpoint(
     config: &mut NodeConfig,
     socket_addr: SocketAddr,
 ) -> Endpoint {
-    match config.finger_table_map.entry(socket_addr) {
+    match config.known_endpoints_udp.entry(socket_addr) {
         Entry::Occupied(entry) => *entry.get(),
         Entry::Vacant(entry) => {
-            let (endpoint, _) = handler.network().connect(Transport::Ws, socket_addr).unwrap();
+            let (endpoint, _) = handler.network().connect(Transport::Udp, socket_addr).unwrap();
             *entry.insert(endpoint)
         }
     }

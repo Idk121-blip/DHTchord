@@ -1,4 +1,4 @@
-use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals};
+use crate::common::{binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals};
 use crate::node_state::NodeConfig;
 use digest::Digest;
 use message_io::node::NodeHandler;
