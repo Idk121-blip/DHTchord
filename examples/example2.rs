@@ -23,15 +23,6 @@ pub async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let (sender_put, receiver_put) = oneshot::channel();
-    let (sender_get, receiver_get) = oneshot::channel::<Result<common::File, ()>>();
-
-    tokio::spawn(async move {
-        println!("{:?}", receiver_put.await.unwrap());
-
-        println!("{:?}", receiver_get.await.unwrap());
-    });
-
     thread::scope(|scope| {
         scope.spawn(|| {
             //
@@ -112,7 +103,7 @@ pub async fn main() {
                             buffer,
                         };
 
-                        user1.put("127.0.0.1:7777", sender_put, file);
+                        let _result = user1.put("127.0.0.1:7777", file);
                     });
                 }
                 Err(error) => {
@@ -130,7 +121,7 @@ pub async fn main() {
                     span.in_scope(|| {
                         sleep(Duration::from_secs(10));
                         let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
-                        user2.get("127.0.0.1:7777", sender_get, input);
+                        let _result = user2.get("127.0.0.1:7777", input);
                     });
                 }
                 Err(error) => {

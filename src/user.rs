@@ -18,31 +18,6 @@ pub struct User {
 }
 
 impl User {
-    /// Creates a new instance of the struct, initializing the network handler and listener, and binding to the specified address and port.
-    ///
-    /// # Parameters
-    /// - `ip_addr`: A `String` representing the IP address where the server will listen for incoming connections.
-    /// - `port`: A `String` representing the port number where the server will listen for incoming connections.
-    ///
-    /// # Returns
-    /// - `Ok(Self)`: Returns an instance of the struct if the initialization is successful.
-    /// - `Err(io::Error)`: Returns an I/O error if the handler fails to bind to the specified address and port.
-    ///
-    /// # Example
-    /// ```rust
-    /// use std::io;
-    /// use DHTchord::user::User;
-    ///
-    /// let instance = User::new("127.0.0.1".to_string(), "8080".to_string())?;
-    ///
-    /// ```
-    ///
-    /// # Panics
-    /// - This function does not panic directly but will propagate any panic caused by the underlying `node::split()` or `listen` functions.
-    ///
-    /// # Notes
-    /// - Ensure that the specified `ip_addr` and `port` are valid and not already in use by another process.
-
     pub fn new(ip_addr: String, port: String) -> Result<Self, io::Error> {
         let (handler, listener) = node::split();
         let (_, listen_socket) = handler.network().listen(Transport::Ws, ip_addr + ":" + &port)?;
@@ -76,7 +51,7 @@ impl User {
     /// let file = File{name: "".to_string(),buffer: vec![]};
     /// let instance = User::new("127.0.0.1".to_string(), "8700".to_string()).unwrap(); // Replace with the actual struct implementing this method.
     ///
-    /// instance.put("127.0.0.1:7777", tx, file);
+    /// instance.put("127.0.0.1:7777", file);
     ///
     /// match rx.recv().unwrap() {
     ///     Ok(key) => println!("File stored successfully, key: {}", key),
@@ -84,7 +59,7 @@ impl User {
     /// }
     /// ```
 
-    pub fn put(self, server_address: &str, sender: Sender<Result<String, PutError>>, file: File) {
+    pub fn put(self, server_address: &str, file: File) -> Result<String, PutError> {
         let (endpoint, _) = self
             .handler
             .network()
@@ -123,7 +98,7 @@ impl User {
             NetEvent::Disconnected(_) => {}
         });
 
-        sender.send(response).unwrap();
+        response
     }
 
     /// Retrieves a file from a remote server using a key and communicates the result back via a channel.
@@ -156,14 +131,14 @@ impl User {
     /// let (tx, rx) = oneshot::channel();
     /// let instance = User::new("127.0.0.1".to_string(), "8700".to_string()).unwrap();
     ///
-    /// instance.get("127.0.0.1:7777", tx, "string_key".to_string());
+    /// instance.get("127.0.0.1:7777", "string_key".to_string());
     /// match rx.recv().unwrap() {
     ///     Ok(file) => println!("File retrieved successfully: {:?}", file),
     ///     Err(err) => println!("Failed to retrieve file: {:?}", err),
     /// }
     /// ```
 
-    pub fn get(self, server_address: &str, sender: Sender<Result<File, GetError>>, key: String) {
+    pub fn get(self, server_address: &str, key: String) -> Result<File, GetError> {
         let (endpoint, _) = self
             .handler
             .network()
@@ -214,6 +189,6 @@ impl User {
             NetEvent::Disconnected(_) => {}
         });
 
-        sender.send(response).unwrap();
+        response
     }
 }
