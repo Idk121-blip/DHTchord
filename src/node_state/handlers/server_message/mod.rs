@@ -1,6 +1,6 @@
 use crate::common;
 use crate::common::{binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals, SERVER_FOLDER};
-use crate::node_state::handlers::server_message::find::find_handler;
+use crate::node_state::handlers::server_message::find::handle_find;
 use crate::node_state::handlers::user_message::get::{get_file_bytes, handle_forwarded_get};
 use crate::node_state::handlers::user_message::put::{handle_forwarded_put, save_in_server};
 use crate::node_state::NodeConfig;
@@ -103,7 +103,7 @@ pub fn handle_server_message(
             //todo remove the first one if it's not n+2^i id
         }
         ChordMessage::Find(wanted_id, searching_address) => {
-            find_handler(handler, config, wanted_id, searching_address);
+            handle_find(handler, config, wanted_id, searching_address);
         }
         ChordMessage::NotifyPresence(addr) => {
             if !config.finger_table.is_empty() && addr == config.finger_table[0] {

@@ -1,11 +1,11 @@
-use crate::common::{binary_search, get_ws_endpoint, ChordMessage, Message, ServerSignals};
+use crate::common::{binary_search, get_endpoint, ChordMessage, Message, ServerSignals};
 use crate::node_state::NodeConfig;
 use digest::Digest;
 use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::net::SocketAddr;
 
-pub fn find_handler(
+pub fn handle_find(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     wanted_id: Vec<u8>,

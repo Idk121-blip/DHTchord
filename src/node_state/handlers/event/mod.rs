@@ -7,7 +7,7 @@ use message_io::network::{NetEvent, SendStatus};
 use message_io::node::NodeHandler;
 use tracing::trace;
 
-pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, signal: ServerSignals) {
+pub fn handle_server_signal(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, signal: ServerSignals) {
     match signal {
         ServerSignals::ForwardMessage(endpoint, message) => {
             //trace!("Forwarding internal message");
@@ -58,7 +58,7 @@ pub fn signal_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeCon
         }
     }
 }
-pub fn net_handler(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, net_event: NetEvent) {
+pub fn handle_net_event(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig, net_event: NetEvent) {
     match net_event {
         NetEvent::Message(endpoint, serialized) => {
             let message = bincode::deserialize(serialized).unwrap();
