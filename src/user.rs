@@ -3,6 +3,7 @@ use crate::common::{File, Message, ServerToUserMessage};
 use crate::errors::GetError::{ErrorRetrievingFile, HexConversion, NotFound};
 use crate::errors::PutError::ErrorStoringFile;
 use crate::errors::{GetError, PutError};
+use message_io::network::SendStatus::ResourceNotAvailable;
 use message_io::network::{NetEvent, Transport};
 use message_io::node;
 use message_io::node::{NodeHandler, NodeListener};
@@ -11,9 +12,9 @@ use std::net::SocketAddr;
 use tracing::trace;
 
 pub struct User {
-    handler: NodeHandler<()>,
+    pub handler: NodeHandler<()>,
     listener: NodeListener<()>,
-    listening_addr: SocketAddr,
+    pub listening_addr: SocketAddr,
 }
 
 impl User {
@@ -59,22 +60,18 @@ impl User {
     /// ```
 
     pub fn put(self, server_address: &str, file: File) -> Result<String, PutError> {
-        let (endpoint, _) = self
-            .handler
-            .network()
-            .connect_sync(Transport::Ws, server_address)
-            .unwrap();
+        let (endpoint, _) = self.handler.network().connect(Transport::Ws, server_address).unwrap();
 
         let message = Message::UserMessage(Put(file, self.listening_addr));
         let serialized = bincode::serialize(&message).unwrap();
-        self.handler.network().send(endpoint, &serialized);
+        while self.handler.network().send(endpoint, &serialized) == ResourceNotAvailable {
+            trace!("waiting for server");
+        }
 
         let mut response = Err(ErrorStoringFile);
 
-        self.listener.for_each(|event| match event.network() {
-            NetEvent::Connected(_, _) => {}
-            NetEvent::Accepted(_, _) => {}
-            NetEvent::Message(_, bytes) => {
+        self.listener.for_each(|event| {
+            if let NetEvent::Message(_, bytes) = event.network() {
                 let server_to_user_message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
                 match server_to_user_message {
                     ServerToUserMessage::SavedKey(key) => {
@@ -94,7 +91,6 @@ impl User {
                     other => panic!("received unexpected message: {:?}", other),
                 }
             }
-            NetEvent::Disconnected(_) => {}
         });
 
         response
@@ -138,25 +134,17 @@ impl User {
     /// ```
 
     pub fn get(self, server_address: &str, key: String) -> Result<File, GetError> {
-        let (endpoint, _) = self
-            .handler
-            .network()
-            .connect_sync(Transport::Ws, server_address)
-            .unwrap();
+        let (endpoint, _) = self.handler.network().connect(Transport::Ws, server_address).unwrap();
 
         let message = Message::UserMessage(Get(key, self.listening_addr));
         let serialized = bincode::serialize(&message).unwrap();
-        self.handler.network().send(endpoint, &serialized);
+        while self.handler.network().send(endpoint, &serialized) == ResourceNotAvailable {}
 
         let mut response = Err(ErrorRetrievingFile);
 
-        self.listener.for_each(|event| match event.network() {
-            NetEvent::Connected(_, _) => {}
-            NetEvent::Accepted(_, _) => {}
-            NetEvent::Message(_, bytes) => {
-                // processor.sender_option.unwrap().send("message received".to_string());
+        self.listener.for_each(|event| {
+            if let NetEvent::Message(_, bytes) = event.network() {
                 let server_to_user_message: ServerToUserMessage = bincode::deserialize(bytes).unwrap();
-
                 match server_to_user_message {
                     ServerToUserMessage::RequestedFile(file) => {
                         trace!("File received");
@@ -168,7 +156,6 @@ impl User {
                     }
                     ServerToUserMessage::FileNotFound(_hex) => {
                         trace!("Not found");
-
                         response = Err(NotFound);
                         self.handler.stop();
                     }
@@ -185,9 +172,7 @@ impl User {
                     other => panic!("received unexpected message: {:?}", other),
                 }
             }
-            NetEvent::Disconnected(_) => {}
         });
-
         response
     }
 }

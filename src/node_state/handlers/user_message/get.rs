@@ -54,25 +54,27 @@ fn handle_user_get(
     }
 
     let digested_file_name = hex::decode(key.clone()).unwrap();
-    let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
+    if !config.finger_table.is_empty() {
+        let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
 
-    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
-        && !(config.id > successor && digested_file_name < successor)
-        && !config.finger_table.is_empty()
-    {
-        let forwarding_index = binary_search(config, &digested_file_name); // todo check code duplication with put
-        let forwarding_address = config.finger_table[forwarding_index];
+        if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+            && !(config.id > successor && digested_file_name < successor)
+            && !config.finger_table.is_empty()
+        {
+            let forwarding_index = binary_search(config, &digested_file_name); // todo check code duplication with put
+            let forwarding_address = config.finger_table[forwarding_index];
 
-        let forwarding_endpoint = get_ws_endpoint(handler, config, forwarding_address);
+            let forwarding_endpoint = get_ws_endpoint(handler, config, forwarding_address);
 
-        handler.signals().send(ServerSignals::ForwardMessage(
-            forwarding_endpoint,
-            Message::ChordMessage(ChordMessage::ForwardedGet(addr, key)),
-        ));
+            handler.signals().send(ServerSignals::ForwardMessage(
+                forwarding_endpoint,
+                Message::ChordMessage(ChordMessage::ForwardedGet(addr, key)),
+            ));
 
-        return Err(GetError::ForwardingRequest(
-            config.finger_table[forwarding_index].to_string(),
-        ));
+            return Err(GetError::ForwardingRequest(
+                config.finger_table[forwarding_index].to_string(),
+            ));
+        }
     }
 
     if !config.saved_files.contains_key(&key) {

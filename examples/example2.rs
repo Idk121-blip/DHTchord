@@ -1,3 +1,4 @@
+use log::trace;
 use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
@@ -36,51 +37,7 @@ pub async fn main() {
                 }
             }
         });
-        scope.spawn(|| {
-            sleep(Duration::from_secs(1));
-            //
-            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "8910".parse().unwrap()) {
-                Ok(server2) => {
-                    sleep(Duration::from_secs(2));
-                    let span = tracing::trace_span!("127.0.0.1:8910");
-                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8911);
-                    span.in_scope(|| server2.connect_and_run(socket_addr));
-                }
-                Err(error) => {
-                    eprintln!("{:?}", error)
-                }
-            }
-        });
-        scope.spawn(|| {
-            //
-            sleep(Duration::from_secs(2));
 
-            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7779".parse().unwrap()) {
-                Ok(server3) => {
-                    let span = tracing::trace_span!("127.0.0.1:7779");
-                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8911);
-                    span.in_scope(|| server3.connect_and_run(socket_addr));
-                }
-                Err(error) => {
-                    eprintln!("{:?}", error)
-                }
-            }
-        });
-
-        scope.spawn(|| {
-            //
-            sleep(Duration::from_secs(3));
-            match NodeState::new(IpAddr::V4("127.0.0.1".parse().unwrap()), "7778".parse().unwrap()) {
-                Ok(server4) => {
-                    let span = tracing::trace_span!("127.0.0.1:7778");
-                    let socket_addr = SocketAddr::new(IpAddr::V4("127.0.0.1".parse().unwrap()), 8910);
-                    span.in_scope(|| server4.connect_and_run(socket_addr));
-                }
-                Err(error) => {
-                    eprintln!("{:?}", error)
-                }
-            }
-        });
         scope.spawn(|| {
             sleep(Duration::from_secs(5));
 
@@ -98,12 +55,13 @@ pub async fn main() {
 
                         let _ = file.unwrap().read_to_end(&mut buffer);
 
+                        println!("{:?}", buffer);
                         let file = common::File {
                             name: file_name.to_string(),
                             buffer,
                         };
 
-                        let _result = user1.put("127.0.0.1:7777", file);
+                        let _result = user1.put("127.0.0.1:8911", file);
                     });
                 }
                 Err(error) => {
@@ -119,9 +77,9 @@ pub async fn main() {
                 Ok(user2) => {
                     let span = tracing::trace_span!("User2");
                     span.in_scope(|| {
-                        sleep(Duration::from_secs(10));
-                        let input = "ac9694c9206dd5a9e51e956a07ade297dd9b4a65ff146629aa6cb5aa08eaacd0".to_string();
-                        let _result = user2.get("127.0.0.1:7777", input);
+                        let input = "1b327397fa3ad27b485c62ebf16149c57371b30e31c052d23bd2fb576c9509e2".to_string();
+                        let _result = user2.get("127.0.0.1:8911", input);
+                        println!("{:?}", _result);
                     });
                 }
                 Err(error) => {

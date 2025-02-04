@@ -20,11 +20,11 @@ fn binary_add(mut vec: Vec<u8>, index: usize, bytes: usize) -> Result<Vec<u8>, (
 
     specific_byte += shifted_increment;
     let mut carry;
-    if specific_byte > 255 {
-        while specific_byte > 255 {
-            carry = specific_byte / 255;
+    if specific_byte > FINGER_TABLE_SIZE as u16 {
+        while specific_byte > FINGER_TABLE_SIZE as u16 {
+            carry = specific_byte / (FINGER_TABLE_SIZE as u16 + 1);
 
-            vec[byte] = (specific_byte % 255) as u8;
+            vec[byte] = (specific_byte % FINGER_TABLE_SIZE as u16) as u8;
 
             if byte as isize - 1 < 0 {
                 break;
@@ -45,10 +45,10 @@ pub fn stabilization_protocol(handler: &NodeHandler<ServerSignals>, config: &mut
 }
 
 fn check_successor(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
-    let now = Utc::now();
     if config.finger_table.is_empty() {
         return;
     }
+    let now = Utc::now();
     if now.signed_duration_since(config.last_modified) > HEARTBEAT_TIMEOUT {
         if config.successors_cache.is_empty() {
             return;

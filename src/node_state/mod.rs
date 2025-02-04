@@ -1,4 +1,5 @@
 mod handlers;
+mod test;
 
 use crate::common::ChordMessage::{self};
 use crate::common::{Message, ServerSignals, SERVER_FOLDER};
@@ -204,7 +205,7 @@ impl NodeState {
             .signals()
             .send_with_timer(ServerSignals::HeartBeat(), HEART_BEAT);
 
-        self.listener.for_each(move |event| match event {
+        self.listener.for_each(|event| match event {
             NodeEvent::Network(event) => handle_net_event(&self.handler, &mut self.config, event),
             NodeEvent::Signal(signal) => handle_server_signal(&self.handler, &mut self.config, signal),
         });

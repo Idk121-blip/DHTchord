@@ -6,7 +6,7 @@ pub enum PutError {
 }
 
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum GetError {
     ForwardingRequest(String),
     ErrorRetrievingFile,

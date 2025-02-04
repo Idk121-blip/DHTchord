@@ -54,10 +54,7 @@ pub fn handle_join(
 
     trace!("{:?} {:?} {:?} ", config.id, node_id, successor);
 
-    //sleep(Duration::from_secs(1));
-
     trace!("Starting forwarding process");
-
     forward_request(handler, config, &node_id, &endpoint);
 }
 

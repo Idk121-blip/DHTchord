@@ -49,24 +49,26 @@ fn handle_user_put(
     addr: SocketAddr,
 ) -> Result<String, PutError> {
     let digested_file_name = Sha256::digest(file.name.as_bytes()).to_vec();
-    let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
+    println!("{:?}", digested_file_name);
+    if !config.finger_table.is_empty() {
+        let successor = Sha256::digest(config.finger_table[0].to_string().as_bytes()).to_vec();
+        if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
+            && !(config.id > successor && digested_file_name < successor)
+            && !config.finger_table.is_empty()
+        {
+            let forwarding_index = binary_search(config, &digested_file_name);
 
-    if !(digested_file_name > config.id && (digested_file_name < successor || config.id > successor))
-        && !(config.id > successor && digested_file_name < successor)
-        && !config.finger_table.is_empty()
-    {
-        let forwarding_index = binary_search(config, &digested_file_name);
+            let forwarding_endpoint = get_ws_endpoint(handler, config, addr);
 
-        let forwarding_endpoint = get_ws_endpoint(handler, config, addr);
+            handler.signals().send(ServerSignals::ForwardMessage(
+                forwarding_endpoint,
+                Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
+            ));
 
-        handler.signals().send(ServerSignals::ForwardMessage(
-            forwarding_endpoint,
-            Message::ChordMessage(ChordMessage::ForwardedPut(addr, file)),
-        ));
-
-        return Err(PutError::ForwardingRequest(
-            config.finger_table[forwarding_index].to_string(),
-        ));
+            return Err(PutError::ForwardingRequest(
+                config.finger_table[forwarding_index].to_string(),
+            ));
+        }
     }
     save_in_server(file, config.self_addr.port(), config).map_or(Err(PutError::ErrorStoringFile), Ok)
 }
