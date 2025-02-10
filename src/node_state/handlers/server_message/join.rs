@@ -31,7 +31,7 @@ pub fn handle_join(
                 .to_string()
                 .as_bytes(),
         )
-            .to_vec()
+        .to_vec()
     } else {
         Sha256::digest(config.predecessor.unwrap().to_string().as_bytes()).to_vec()
     };
