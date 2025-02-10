@@ -32,7 +32,7 @@ pub(crate) enum ChordMessage {
 
     Message(String),
 
-    ForwardedJoin(SocketAddr),
+    ForwardJoin(SocketAddr),
 
     ForwardedPut(SocketAddr, File),
 

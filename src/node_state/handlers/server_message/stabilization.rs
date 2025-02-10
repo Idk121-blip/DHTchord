@@ -89,39 +89,35 @@ fn heart_beat(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
 }
 
 fn update_finger_table(handler: &NodeHandler<ServerSignals>, config: &mut NodeConfig) {
-    if config.finger_table.is_empty() {
-        handler
-            .signals()
-            .send_with_timer(ServerSignals::Stabilization(), config.gossip_interval);
-        return;
-    }
-    if config.gossip_interval.lt(&MAXIMUM_DURATION) {
-        let new_interval = config.gossip_interval.mul(2);
-        config.gossip_interval = new_interval;
-    }
-
-    let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
-    let mut forwarding_index = binary_search(config, &searching);
-    let mut socket_address = config.finger_table[forwarding_index];
-    let mut endpoint = get_ws_endpoint(handler, config, socket_address);
-
-    handler.signals().send(ServerSignals::ForwardMessage(
-        endpoint,
-        Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
-    ));
-
-    for i in 0..FINGER_TABLE_SIZE {
-        let searching = binary_add(config.id.clone(), i, ID_BYTES).unwrap();
-        forwarding_index = binary_search(config, &searching);
-
-        socket_address = config.finger_table[forwarding_index];
-
-        endpoint = get_ws_endpoint(handler, config, socket_address);
+    if !config.finger_table.is_empty() {
+        let searching = binary_add(config.id.clone(), 0, ID_BYTES).unwrap();
+        let mut forwarding_index = binary_search(config, &searching);
+        let mut socket_address = config.finger_table[forwarding_index];
+        let mut endpoint = get_ws_endpoint(handler, config, socket_address);
 
         handler.signals().send(ServerSignals::ForwardMessage(
             endpoint,
             Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
         ));
+
+        for i in 0..FINGER_TABLE_SIZE {
+            let searching = binary_add(config.id.clone(), i, ID_BYTES).unwrap();
+            forwarding_index = binary_search(config, &searching);
+
+            socket_address = config.finger_table[forwarding_index];
+
+            endpoint = get_ws_endpoint(handler, config, socket_address);
+
+            handler.signals().send(ServerSignals::ForwardMessage(
+                endpoint,
+                Message::ChordMessage(ChordMessage::Find(searching, config.self_addr)),
+            ));
+        }
+
+        if config.gossip_interval.lt(&MAXIMUM_DURATION) {
+            let new_interval = config.gossip_interval.mul(2);
+            config.gossip_interval = new_interval;
+        }
     }
     handler
         .signals()

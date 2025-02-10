@@ -5,7 +5,7 @@ use message_io::node::NodeHandler;
 use sha2::Sha256;
 use std::net::SocketAddr;
 
-pub fn handle_find(
+pub fn handle_lookup(
     handler: &NodeHandler<ServerSignals>,
     config: &mut NodeConfig,
     wanted_id: Vec<u8>,
